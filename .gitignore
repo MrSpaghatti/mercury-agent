@@ -16,3 +16,18 @@ mercury_code/mercury_code
 *.db
 .env
 .desloppify/
+
+# Compiled Nim binaries (build artifacts)
+*.out
+mercury_core/test_simple
+test_config
+mercury_core/src/mercury_core/llm_client
+mercury_core/tests/tconfig
+mercury_core/tests/tllm_client
+mercury_core/tests/tmemory
+mercury_core/tests/ttoken_counter
+mercury_core/tests/ttool_registry
+mercury_core/tests/test_mock_server
+mercury_agent/tests/tagent_loop
+mercury_agent/tests/tcli
+mercury_agent/tests/tintegration
