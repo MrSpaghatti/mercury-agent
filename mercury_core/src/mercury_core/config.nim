@@ -13,6 +13,7 @@
 ##   OPENROUTER_API_KEY
 
 import std/[os, parsecfg, strutils, streams]
+import discord_types
 
 type
   MercuryConfig* = object
@@ -26,6 +27,7 @@ type
     maxLoopIterations*: int
     dbPath*: string
     openrouterApiKey*: string   ## loaded from .env or env var
+    discord*: DiscordConfig
 
   ConfigError* = object of CatchableError
 
@@ -52,7 +54,8 @@ proc defaultConfig*(): MercuryConfig =
     temperature: DefaultTemperature,
     maxLoopIterations: DefaultMaxLoopIterations,
     dbPath: DefaultDbPath,
-    openrouterApiKey: ""
+    openrouterApiKey: "",
+    discord: defaultDiscordConfig()
   )
 
 proc parseEnvFile*(path: string): seq[tuple[key, val: string]] =
@@ -78,6 +81,13 @@ proc parseEnvFile*(path: string): seq[tuple[key, val: string]] =
         val = val[1 ..< val.len - 1]
     result.add((key, val))
 
+proc parseCsvList(val: string): seq[string] =
+  result = @[]
+  for item in val.split(','):
+    let stripped = item.strip()
+    if stripped.len > 0:
+      result.add(stripped)
+
 proc applyTomlSection(cfg: var MercuryConfig; section, key, val: string) =
   ## Applies a single key-value pair from the TOML/INI config to cfg.
   ## Section "" means the global/root section.
@@ -100,6 +110,31 @@ proc applyTomlSection(cfg: var MercuryConfig; section, key, val: string) =
       let n = parseInt(val)
       cfg.maxLoopIterations = n
     of "db_path":            cfg.dbPath = val
+    else: discard
+  of "discord":
+    case k
+    of "token_env": cfg.discord.tokenEnv = val
+    of "prefix": cfg.discord.prefix = val
+    else: discard
+  of "discord.admins":
+    case k
+    of "allow": cfg.discord.admins.allow = parseCsvList(val)
+    of "deny": cfg.discord.admins.deny = parseCsvList(val)
+    else: discard
+  of "discord.users":
+    case k
+    of "allow": cfg.discord.users.allow = parseCsvList(val)
+    of "deny": cfg.discord.users.deny = parseCsvList(val)
+    else: discard
+  of "discord.file_rules":
+    case k
+    of "allow": cfg.discord.fileRules.allow = parseCsvList(val)
+    of "deny": cfg.discord.fileRules.deny = parseCsvList(val)
+    else: discard
+  of "discord.tools":
+    case k
+    of "allow": cfg.discord.tools.allow = parseCsvList(val)
+    of "deny": cfg.discord.tools.deny = parseCsvList(val)
     else: discard
   else: discard
 
