@@ -8,7 +8,7 @@ proc fenceBalanced(chunk: string): bool =
 
 suite "chunkMessage":
   test "empty string returns no chunks":
-    check chunkMessage("") == @[]
+    check chunkMessage("") == newSeq[string]()
 
   test "single character stays intact":
     check chunkMessage("a") == @["a"]

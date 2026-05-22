@@ -10,3 +10,9 @@ requires "dimscord >= 1.0.0"
 requires "cligen >= 1.6.0"
 switch("path", "src")
 switch("path", "../mercury_core/src")
+switch("path", "../mercury_core/tests")
+
+task test, "Run agent loop and cli tests":
+  exec "nim c -d:ssl --path:src --path:../mercury_core/src --path:../mercury_core/tests -r tests/tagent_loop.nim"
+  exec "nim c -d:ssl --path:src --path:../mercury_core/src --path:../mercury_core/tests -r tests/tcli.nim"
+  exec "nim c -d:ssl --path:src --path:../mercury_core/src --path:../mercury_core/tests -r tests/tintegration.nim"

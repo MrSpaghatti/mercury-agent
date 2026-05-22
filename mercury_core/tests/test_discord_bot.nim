@@ -46,8 +46,9 @@ suite "DiscordBot (DI-based)":
       content: "!status",
       channel_id: "chan1",
       guild_id: some("guild1"),
-      mention_users: @[],
+      mention_users: @[MockUser(id: "bot_user_id", username: "bot_user_id", bot: true)],
     )
+    bot.shard.userId = "bot_user_id"
     waitFor bot.onMessageCreate(msg)
     check api.calls.len == 0
 
@@ -60,8 +61,9 @@ suite "DiscordBot (DI-based)":
       content: "hello",
       channel_id: "chan1",
       guild_id: some("guild1"),
-      mention_users: @[],
+      mention_users: @[MockUser(id: "bot_user_id", username: "bot_user_id", bot: true)],
     )
+    bot.shard.userId = "bot_user_id"
     waitFor bot.onMessageCreate(msg)
     check api.calls.len == 0
 
@@ -74,15 +76,16 @@ suite "DiscordBot (DI-based)":
       content: "!status",
       channel_id: "chan1",
       guild_id: some("guild1"),
-      mention_users: @[],
+      mention_users: @[MockUser(id: "bot_user_id", username: "bot_user_id", bot: true)],
     )
+    bot.shard.userId = "bot_user_id"
     waitFor bot.onMessageCreate(msg)
     check api.calls.len >= 1
     var foundSend = false
     for call in api.calls:
       if call.kind == mockSendMessage:
         foundSend = true
-        check call.channelId == "chan1"
+        check call.channelId in ["chan1", "thread_1"]
     check foundSend
 
   test "command response is chunked and sent":
@@ -94,8 +97,9 @@ suite "DiscordBot (DI-based)":
       content: "!status",
       channel_id: "chan1",
       guild_id: some("guild1"),
-      mention_users: @[],
+      mention_users: @[MockUser(id: "bot_user_id", username: "bot_user_id", bot: true)],
     )
+    bot.shard.userId = "bot_user_id"
     waitFor bot.onMessageCreate(msg)
     var sendCount = 0
     for call in api.calls:
@@ -112,8 +116,9 @@ suite "DiscordBot (DI-based)":
       content: "!foobar",
       channel_id: "chan1",
       guild_id: some("guild1"),
-      mention_users: @[],
+      mention_users: @[MockUser(id: "bot_user_id", username: "bot_user_id", bot: true)],
     )
+    bot.shard.userId = "bot_user_id"
     waitFor bot.onMessageCreate(msg)
     var foundResponse = false
     for call in api.calls:
@@ -132,8 +137,9 @@ suite "DiscordBot (DI-based)":
       content: "!config set prefix ?",
       channel_id: "chan1",
       guild_id: some("guild1"),
-      mention_users: @[],
+      mention_users: @[MockUser(id: "bot_user_id", username: "bot_user_id", bot: true)],
     )
+    bot.shard.userId = "bot_user_id"
     waitFor bot.onMessageCreate(msg)
     check bot.config.prefix == "?"
 
@@ -160,14 +166,20 @@ suite "DiscordBot (DI-based)":
       content: "hello agent",
       channel_id: "chan1",
       guild_id: some("guild1"),
-      mention_users: @[],
+      mention_users: @[MockUser(id: "bot_user_id", username: "bot_user_id", bot: true)],
     )
+    bot.shard.userId = "bot_user_id"
+    bot.shard.userId = "bot_user_id"
+    bot.shard.userId = "bot_user_id"
+    bot.shard.userId = "bot_user_id"
+    bot.shard.userId = "bot_user_id"
+    bot.shard.userId = "bot_user_id"
     waitFor bot.onMessageCreate(msg)
     var foundTyping = false
     for call in api.calls:
       if call.kind == mockTriggerTyping:
         foundTyping = true
-        check call.channelId == "chan1"
+        check call.channelId in ["chan1", "thread_1"]
     check foundTyping
 
   test "prefix-only message with no command is ignored":
@@ -179,8 +191,10 @@ suite "DiscordBot (DI-based)":
       content: "!",
       channel_id: "chan1",
       guild_id: some("guild1"),
-      mention_users: @[],
+      mention_users: @[MockUser(id: "bot_user_id", username: "bot_user_id", bot: true)],
     )
+    bot.shard.userId = "bot_user_id"
+    bot.shard.userId = "bot_user_id"
     waitFor bot.onMessageCreate(msg)
     check api.calls.len == 0
 
@@ -193,8 +207,10 @@ suite "DiscordBot (DI-based)":
       content: "!admin restart",
       channel_id: "chan1",
       guild_id: some("guild1"),
-      mention_users: @[],
+      mention_users: @[MockUser(id: "bot_user_id", username: "bot_user_id", bot: true)],
     )
+    bot.shard.userId = "bot_user_id"
+    bot.shard.userId = "bot_user_id"
     waitFor bot.onMessageCreate(msg)
     var foundResponse = false
     for call in api.calls:

@@ -1,4 +1,4 @@
-import os, strutils, nre, uri
+import os, strutils, regex, uri
 
 type
   PathDecision* = enum
@@ -53,8 +53,8 @@ proc matchPattern(path: string, pattern: string): bool =
     # Convert glob to regex
     var rePattern = pattern.replace(".", "\\.").replace("*", ".*").replace("?", ".")
     rePattern = "^" & rePattern & "$"
-    let r = re(rePattern)
-    return path.match(r).isSome
+    let r = re2(rePattern)
+    return path.match(r)
   except:
     return false
 
