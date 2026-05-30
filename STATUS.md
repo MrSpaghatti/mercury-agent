@@ -189,8 +189,10 @@ Near-term candidates (in priority order):
    Green CI badge on every push.
 2. **~~mercury_code package (P1)~~** ✅ — Autonomous coding harness with compile,
    test, read_file, write_file tools. 11 tests pass.
-3. **MCP support (P2)** — Integrate Model Context Protocol for external
-   tool discovery.
+3. **MCP support (P2)** — 🔄 In progress. `mcp_client.nim` (HTTP/JSON-RPC
+   transport, initialize, tools/list, tools/call), `mcp_tool.nim` (tool
+   registration bridge), `McpServerConfig` added to `MercuryConfig`.
+   Build passes on both Nim 2.0.x and 2.2.x. 8 tests written.
 4. **Sub-agent delegation (P2)** — Allow the ReAct loop to spawn child
    agents for parallel exploration.
 5. **Web UI (P3)** — Lightweight HTTP chat frontend.

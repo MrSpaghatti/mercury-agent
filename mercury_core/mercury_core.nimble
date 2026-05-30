@@ -28,3 +28,4 @@ task test, "Run all tests":
   exec "nim c -r tests/test_thread_mapping.nim"
   exec "nim c -r tests/test_thread_reconnection.nim"
   exec "nim c -r tests/test_agent_dispatcher.nim"
+  exec "nim c -r tests/test_mcp_client.nim"

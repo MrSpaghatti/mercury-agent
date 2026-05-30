@@ -131,4 +131,30 @@ Initial release covering the completed foundation phases.
 - **.gitignore**: added `mercury_code/src/mercury_code/mercury_code` and
   `mercury_code/tcode_runner` build artifacts
 
+### Security
+
+- **mercury_code/compile.nim**: `except:` (bare catch) → `except CatchableError:`
+  to avoid silencing `Defect` types in subprocess output handling
+
+### Added
+
+- **mercury_core**: added `mcp_client.nim` — MCP client with HTTP/JSON-RPC
+  transport, `initialize`/`tools/list`/`tools/call` methods, full error
+  hierarchy (`McpConnectionError`, `McpProtocolError`, `McpToolNotFoundError`),
+  `McpClient` ref object for closure capture, `discoverMcpTools()` batch discovery
+- **mercury_core**: added `mcp_tool.nim` — bridge between `McpTool` (MCP protocol)
+  and `Tool` (agent tool registry). `makeMcpToolExecuteProc` creates
+  `{.gcsafe, raises: []}` closures; `registerMcpServers` discovers and registers
+  tools from configured servers into a `ToolRegistry`
+- **mercury_core/config.nim**: `McpServerConfig` type with url, authToken,
+  timeoutMs, enabled fields; `mcpServers: seq[McpServerConfig]` added to
+  `MercuryConfig`
+- **mercury_core**: added `test_mcp_client.nim` — 8 tests covering config
+  defaults/custom values, URL trailing-slash stripping, JSON-RPC request/response,
+  error hierarchy, client construction, config integration
+- **.github/ISSUE_TEMPLATE/**: added bug_report.md, feature_request.md,
+  ci_infrastructure.md, config.yml with labels and env/version fields
+- **.github/PULL_REQUEST_TEMPLATE/**: added pull_request_template.md with
+  test/style/CHANGELOG checklist
+
 [0.1.0]: https://github.com/MrSpaghatti/mercury-agent/compare/initial...v0.1.0

@@ -16,6 +16,13 @@ import std/[os, parsecfg, strutils, streams]
 import discord_types
 
 type
+  McpServerConfig* = object
+    ## Configuration for a single MCP server endpoint.
+    url*: string
+    authToken*: string
+    timeoutMs*: int
+    enabled*: bool
+
   MercuryConfig* = object
     provider*: string           ## "openrouter" or "vllm"
     vllmEndpoint*: string
@@ -28,6 +35,7 @@ type
     dbPath*: string
     openrouterApiKey*: string   ## loaded from .env or env var
     discord*: DiscordConfig
+    mcpServers*: seq[McpServerConfig]  ## Configured MCP server endpoints
 
   ConfigError* = object of CatchableError
 
@@ -41,6 +49,7 @@ const
   DefaultTemperature* = 0.3
   DefaultMaxLoopIterations* = 10
   DefaultDbPath* = "~/.local/share/mercury/mercury.db"
+  DefaultMcpTimeoutMs* = 30_000
 
 proc defaultConfig*(): MercuryConfig =
   ## Returns a MercuryConfig populated with all defaults.
@@ -55,7 +64,8 @@ proc defaultConfig*(): MercuryConfig =
     maxLoopIterations: DefaultMaxLoopIterations,
     dbPath: DefaultDbPath,
     openrouterApiKey: "",
-    discord: defaultDiscordConfig()
+    discord: defaultDiscordConfig(),
+    mcpServers: @[],
   )
 
 proc parseEnvFile*(path: string): seq[tuple[key, val: string]] =

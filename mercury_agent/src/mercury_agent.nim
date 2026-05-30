@@ -27,6 +27,8 @@ import mercury_core/thread_mapping
 import mercury_core/file_tool
 import mercury_core/file_path_validator
 import mercury_core/message_chunker
+import mercury_core/mcp_client
+import mercury_core/mcp_tool
 from mercury_core/agent_dispatcher import AgentDispatcher, AgentRequest, newAgentDispatcher
 
 import dimscord
@@ -122,11 +124,13 @@ proc buildLLMClient*(cfg: MercuryConfig): LLMClient =
     model   = activeModel(cfg),
   )
 
-proc buildRegistry*(): ToolRegistry =
-  ## Builds the default tool registry for the agent. Currently registers
-  ## only the shell tool.
+proc buildRegistry*(cfg: MercuryConfig = defaultConfig()): ToolRegistry =
+  ## Builds the default tool registry for the agent. Registers the shell tool
+  ## and any MCP tools configured in `cfg.mcpServers`.
   result = newToolRegistry()
   result.register(shellTool())
+  if cfg.mcpServers.len > 0:
+    discard registerMcpServers(result, cfg.mcpServers)
 
 proc resolveDbPath*(cfg: MercuryConfig): string =
   ## Expands `~` in the configured DB path and ensures the parent dir
@@ -306,7 +310,7 @@ proc cmdChat*(
   except ConfigError as e:
     printError(e.msg); return 2
   let llm = buildLLMClient(cfg)
-  let reg = buildRegistry()
+  let reg = buildRegistry(cfg)
   var mem = openMemory(cfg)
   defer: mem.close()
   runChatLoop(
@@ -341,7 +345,7 @@ proc cmdAsk*(
   except ConfigError as e:
     printError(e.msg); return 2
   let llm = buildLLMClient(cfg)
-  let reg = buildRegistry()
+  let reg = buildRegistry(cfg)
   var mem = openMemory(cfg)
   defer: mem.close()
   let userInput = question.join(" ")
@@ -403,7 +407,7 @@ proc cmdSession*(
   if not sessionExists(dbPath, sessionId):
     printError("no such session: " & sessionId); return 4
   let llm = buildLLMClient(cfg)
-  let reg = buildRegistry()
+  let reg = buildRegistry(cfg)
   var mem = openMemory(cfg)
   defer: mem.close()
   let history = mem.getHistory(sessionId)

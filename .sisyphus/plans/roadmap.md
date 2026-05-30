@@ -93,15 +93,24 @@ self-contained coding harness binary that reuses the ReAct loop from
 
 **Acceptance**: 11/11 tests pass, binary compiles and runs `--help`.
 
-### P2 — MCP Support (estimated: 2 sessions)
+### P2 — MCP Support (estimated: 2 sessions) ✅ IN PROGRESS
 
 Model Context Protocol integration for external tool discovery.
 
-- Add an MCP client module in `mercury_core`
-- MCP tools appear as dynamically-registered tools in `ToolRegistry`
-- Configuration: list of MCP server endpoints in `MercuryConfig`
-- Each MCP tool gets its own schema from the MCP server's `ListTools`
-  response, converted to OpenAI function-calling format
+- ✅ Add an MCP client module in `mercury_core` (`mcp_client.nim`)
+  - HTTP/JSON-RPC transport, `initialize` handshake, `tools/list`,
+    `tools/call`, `McpClient` (ref object), full error hierarchy
+- ✅ Add tool registration bridge (`mcp_tool.nim`)
+  - `makeMcpToolExecuteProc` creates `{.gcsafe, raises: []}` closures
+  - `registerMcpServers` wires discovered tools into `ToolRegistry`
+- ✅ MCP servers configured via `MercuryConfig.mcpServers`
+  - `mcpServers` seq in config, TOML `[mcp_servers]` section, env vars
+- 🔲 Config loading: TOML parser needs `[mcp_servers]` section
+  - `MERCURY_MCP_SERVER_0_URL` etc. for env-only setup
+- 🔲 SSE/streaming transport for server-driven tool calls
+  - Current: HTTP/JSON-RPC polling (sufficient for initial integration)
+- 🔲 Full test suite for MCP client, MCP tool registration
+- 🔲 CHANGELOG entry
 
 **Why MCP**: Instead of hardcoding every possible tool (search, db,
 calculator, etc.), the agent discovers them at runtime. This keeps the
