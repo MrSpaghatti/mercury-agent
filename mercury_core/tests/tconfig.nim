@@ -1,7 +1,7 @@
 ## Tests for mercury_core/config.nim
 
 import std/[os, unittest]
-import mercury_core/config
+import mercury_core/config, mercury_core/mcp_client
 
 # ---------------------------------------------------------------------------
 # Helpers

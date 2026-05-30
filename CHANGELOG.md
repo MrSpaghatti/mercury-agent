@@ -138,6 +138,47 @@ Initial release covering the completed foundation phases.
 
 ### Added
 
+- **mercury_core**: `persona.nim` — Persona system with `PersonaConfig`,
+  `PersonaRegistry`, TOML loading from `~/.config/mercury/personas.toml`.
+  Supports system prompt, model/temperature overrides, per-persona tool
+  allow/deny lists, memory scope (own_sessions/none/shared), max history
+  cap, delegation bounds, and iteration limits.
+- **mercury_core**: `delegate.nim` — DelegationConfig with safety bounds
+  (`maxDelegationDepth`, `maxDelegationsPerRun`), `canDelegate()`,
+  `useDelegationSlot()`, `applyPersonaDelegation()`.
+- **mercury_core**: `tool_registry.nim` — `scopedRegistry()` produces a
+  filtered `ToolRegistry` per persona; `filterToolsByPersona()` handles
+  allow/deny logic (deny wins on conflict, empty allow = all pass).
+- **mercury_agent**: `run <persona> <task>` subcommand that loads
+  `~/.config/mercury/personas.toml`, builds a persona-scoped agent config,
+  and executes via `runAgentLoop`.
+- **mercury_agent**: `delegate` tool (gcsafe closure, `{.raises: [].}`) that
+  spawns child agents from named personas within the ReAct loop. Safety
+  bounds enforced via `DelegationConfig`.
+- **mercury_core**: `test_persona.nim` — 22 tests covering registry
+  construction, tool filtering, memory scope, delegation config, defaults.
+- **config/personas.example.toml**: Template with 4 personas:
+  `code_reviewer` (shell+files), `researcher` (stateless),
+  `writer` (files only, memory-capped), `debug` (full access).
+
+### Changed
+
+- **mercury_core/agent_loop.nim**: `AgentConfig` extended with optional
+  `persona: PersonaConfig` and `delegation: DelegationConfig` fields.
+- **mercury_core**: `tconfig.nim` now imports `mcp_client` for
+  `DefaultMcpServerUrl` constant used in tests.
+
+### Security
+
+- **mercury_core/persona.nim**: `parseMemoryScope()` and `parseBool()`
+  use constant-time `case` statements; persona names normalized to
+  lowercase to prevent duplicate registration via case-folding.
+- **mercury_agent**: `cmdRunPersona` validates persona existence before
+  spawning; registry globals set before agent loop to prevent nil
+  reference in delegate tool.
+
+### Added
+
 - **mercury_core**: added `mcp_client.nim` — MCP client with HTTP/JSON-RPC
   transport, `initialize`/`tools/list`/`tools/call` methods, full error
   hierarchy (`McpConnectionError`, `McpProtocolError`, `McpToolNotFoundError`),

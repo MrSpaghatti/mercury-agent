@@ -46,3 +46,16 @@ mercury_core/tests/test_thread_mapping
 mercury_core/tests/test_thread_reconnection
 mercury_code/src/mercury_code/mercury_code
 mercury_code/tcode_runner
+mercury_core/tests/test_persona
+mercury_core/tests/temp_test
+mercury_core/src/mercury_core/delegate
+mercury_core/src/mercury_core/persona
+mercury_core/src/mercury_core/tool_registry
+mercury_agent/src/agent_loop
+mercury_agent/src/tools/shell
+.opencode/
+mercury_core/src/mercury_core/delegate
+mercury_core/src/mercury_core/persona
+mercury_core/src/mercury_core/tool_registry
+mercury_agent/src/agent_loop
+mercury_agent/src/tools/shell

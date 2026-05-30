@@ -12,7 +12,7 @@
 ## flags `--model`, `--provider`, and `--temperature` override the values
 ## in the loaded config without touching disk.
 
-import std/[os, strutils, strformat, asyncdispatch, options]
+import std/[os, strutils, strformat, asyncdispatch, options, json]
 import db_connector/db_sqlite
 
 import mercury_core/config
@@ -29,6 +29,8 @@ import mercury_core/file_path_validator
 import mercury_core/message_chunker
 import mercury_core/mcp_client
 import mercury_core/mcp_tool
+import mercury_core/persona
+import mercury_core/delegate
 from mercury_core/agent_dispatcher import AgentDispatcher, AgentRequest, newAgentDispatcher
 
 import dimscord
@@ -124,13 +126,193 @@ proc buildLLMClient*(cfg: MercuryConfig): LLMClient =
     model   = activeModel(cfg),
   )
 
+# ---------------------------------------------------------------------------
+# Global state for tool closures
+# ---------------------------------------------------------------------------
+
+type
+  AgentGlobals* = ref object
+    ## Container for agent-loop globals that need safe closure capture.
+    personaRegistry*: PersonaRegistry
+    llmClient*: LLMClient
+
+var gGlobals*: AgentGlobals = nil
+
+proc setPersonaRegistry*(reg: PersonaRegistry) =
+  if gGlobals.isNil:
+    gGlobals = AgentGlobals(personaRegistry: reg)
+  else:
+    gGlobals.personaRegistry = reg
+
+proc setGlobalLLMClient*(llm: LLMClient) =
+  if gGlobals.isNil:
+    gGlobals = AgentGlobals(llmClient: llm)
+  else:
+    gGlobals.llmClient = llm
+
+# ---------------------------------------------------------------------------
+# Delegate tool
+# ---------------------------------------------------------------------------
+
+proc makeDelegateParams*(): JsonNode =
+  ## Builds the JSON Schema for the delegate tool parameters.
+  let p = newJObject()
+  p["type"] = %"object"
+  p["properties"] = newJObject()
+  p["properties"]["persona"] = newJObject()
+  p["properties"]["persona"]["type"] = %"string"
+  p["properties"]["persona"]["description"] =
+    %"Name of the persona to spawn (e.g. 'code_reviewer')"
+  p["properties"]["task"] = newJObject()
+  p["properties"]["task"]["type"] = %"string"
+  p["properties"]["task"]["description"] =
+    %"The subtask description for the child agent"
+  p["required"] = newJArray()
+  p["required"].add(%"persona")
+  p["required"].add(%"task")
+  p
+
+proc makeDelegateExecuteProc*(): auto =
+  ## Returns a gcsafe closure that captures the current AgentGlobals ref.
+  ## The ref object is GC-safe to capture, and the closure accesses globals
+  ## through the ref rather than directly.
+  let captured = gGlobals
+  return proc (args: JsonNode): ToolResult =
+    if captured.isNil:
+      return ToolResult(
+        output: "delegate: agent globals not initialized",
+        isError: true,
+        exitCode: 1,
+      )
+    let personaName = args{"persona"}.getStr("")
+    let task = args{"task"}.getStr("")
+    if personaName.len == 0:
+      return ToolResult(
+        output: "delegate: 'persona' argument is required",
+        isError: true,
+        exitCode: 1,
+      )
+    if task.len == 0:
+      return ToolResult(
+        output: "delegate: 'task' argument is required",
+        isError: true,
+        exitCode: 1,
+      )
+    if captured.personaRegistry.isNil:
+      return ToolResult(
+        output: "delegate: no persona registry loaded (no personas.toml found)",
+        isError: true,
+        exitCode: 1,
+      )
+    if not captured.personaRegistry.hasPersona(personaName):
+      return ToolResult(
+        output: "delegate: unknown persona '" & personaName &
+          "'. Available: " & captured.personaRegistry.listPersonas().join(", "),
+        isError: true,
+        exitCode: 1,
+      )
+    let persona =
+      try: captured.personaRegistry.getPersona(personaName)
+      except PersonaError:
+        return ToolResult(
+          output: "delegate: failed to load persona '" & personaName & "'",
+          isError: true,
+          exitCode: 1,
+        )
+    if captured.llmClient.baseUrl.len == 0:
+      return ToolResult(
+        output: "delegate: LLM client not available (baseUrl is empty)",
+        isError: true,
+        exitCode: 1,
+      )
+    let parentCfg = defaultConfig()
+    var childCfg = newAgentConfig(parentCfg)
+    if persona.systemPrompt.len > 0:
+      childCfg.systemPrompt = persona.systemPrompt
+    if persona.maxIterations > 0:
+      childCfg.maxIterations = persona.maxIterations
+    childCfg.persona = persona
+    childCfg.delegation = applyPersonaDelegation(
+      persona.maxDelegationDepth,
+      persona.maxDelegationsPerRun,
+      persona.name,
+    )
+    let memPath =
+      if parentCfg.dbPath.len > 0: parentCfg.dbPath
+      else: "~/.local/share/mercury/mercury.db"
+    var childMem: Memory
+    try:
+      childMem = newMemory(memPath)
+    except CatchableError:
+      return ToolResult(
+        output: "delegate: cannot open memory store",
+        isError: true,
+        exitCode: 1,
+      )
+    let childResult = runAgentLoop(
+      agentCfg = childCfg,
+      llm = captured.llmClient,
+      registry = newToolRegistry(),
+      memory = childMem,
+      userInput = task,
+    )
+    childMem.close()
+    var lines: seq[string] = @[]
+    lines.add("=== Child Agent Result ===")
+    lines.add("Persona: " & persona.name)
+    lines.add("Session: " & childResult.sessionId)
+    lines.add("Stop reason: " & $childResult.stopReason)
+    lines.add("Tokens: " & $childResult.stats.totalTokens &
+      " (prompt: " & $childResult.stats.promptTokens &
+      ", completion: " & $childResult.stats.completionTokens & ")")
+    lines.add("Turns: " & $childResult.stats.totalTurns)
+    lines.add("Tool calls: " & $childResult.stats.toolCallsMade)
+    lines.add("")
+    lines.add("--- Response ---")
+    if childResult.text.len > 0:
+      lines.add(childResult.text)
+    else:
+      lines.add("(no text produced)")
+    return ToolResult(
+      output: lines.join("\n"),
+      isError: false,
+      exitCode: 0,
+    )
+
+proc makeDelegateTool*(): Tool =
+  ## Returns the delegate tool with the current agent globals captured.
+  ## Call this after setting globals via setPersonaRegistry / setGlobalLLMClient.
+  let description = "Spawn a child agent from a named persona to handle " &
+    "a specific subtask. The child agent runs with its own system prompt, " &
+    "tool restrictions, and memory isolation. " &
+    "Args: persona (string, name of persona), task (string, the subtask). " &
+    "Returns: the child's final text response plus execution metadata."
+
+  let exec = makeDelegateExecuteProc()
+  newTool(
+    name = "delegate",
+    description = description,
+    parameters = makeDelegateParams(),
+    execute = exec,
+  )
+
+proc delegateTool*(): Tool =
+  ## Creates the delegate tool with a snapshot of current globals.
+  ## NOTE: prefer `makeDelegateTool` after globals are set. This proc
+  ## captures globals at proc definition time (potentially nil).
+  makeDelegateTool()
+
 proc buildRegistry*(cfg: MercuryConfig = defaultConfig()): ToolRegistry =
   ## Builds the default tool registry for the agent. Registers the shell tool
-  ## and any MCP tools configured in `cfg.mcpServers`.
+  ## and any MCP tools configured in `cfg.mcpServers`. Also registers the
+  ## delegate tool if agent globals are available.
   result = newToolRegistry()
   result.register(shellTool())
   if cfg.mcpServers.len > 0:
     discard registerMcpServers(result, cfg.mcpServers)
+  # Register delegate tool — only if globals are set
+  if not gGlobals.isNil and gGlobals.llmClient.baseUrl.len > 0:
+    result.register(makeDelegateTool())
 
 proc resolveDbPath*(cfg: MercuryConfig): string =
   ## Expands `~` in the configured DB path and ensures the parent dir
@@ -150,72 +332,21 @@ proc openMemory*(cfg: MercuryConfig): Memory =
   newMemory(resolveDbPath(cfg))
 
 # ---------------------------------------------------------------------------
-# Output formatting
-# ---------------------------------------------------------------------------
-
-proc printAssistant(text: string) =
-  stdout.writeLine("Mercury> " & text)
-  stdout.flushFile()
-
-proc printSystemNote(text: string) =
-  stdout.writeLine("[" & text & "]")
-  stdout.flushFile()
-
-proc printError(text: string) =
-  stderr.writeLine("error: " & text)
-  stderr.flushFile()
-
-# ---------------------------------------------------------------------------
-# Recent-sessions listing
-#
-# memory.nim does not expose a `listSessions` proc, so we open our own
-# read-only sqlite handle against the same db file. This keeps the
-# read-only modules untouched while still letting the CLI render the
-# `history` view.
+# Chat REPL
 # ---------------------------------------------------------------------------
 
 type
-  SessionSummary* = object
+  SessionSummary* = object   ## defined here; also referenced by listRecentSessions
     id*: string
     createdAt*: string
     updatedAt*: string
     messageCount*: int
 
-proc listRecentSessions*(dbPath: string; limit: int = 20): seq[SessionSummary] =
-  ## Returns up to `limit` most-recently-updated sessions. Returns an
-  ## empty seq if the DB does not yet exist (no prior runs).
-  result = @[]
-  if not fileExists(dbPath):
-    return
-  let db = open(dbPath, "", "", "")
-  defer: db.close()
-  for row in db.fastRows(sql"""
-    SELECT s.id, s.created_at, s.updated_at,
-           (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id)
-    FROM sessions s
-    ORDER BY s.updated_at DESC
-    LIMIT ?
-  """, $limit):
-    result.add(SessionSummary(
-      id: row[0],
-      createdAt: row[1],
-      updatedAt: row[2],
-      messageCount: parseInt(row[3]),
-    ))
-
-proc sessionExists*(dbPath, sessionId: string): bool =
-  ## True if a session with the given id exists in the DB at `dbPath`.
-  if not fileExists(dbPath):
-    return false
-  let db = open(dbPath, "", "", "")
-  defer: db.close()
-  let row = db.getRow(
-    sql"SELECT id FROM sessions WHERE id = ?", sessionId)
-  return row[0].len > 0
-
-# ---------------------------------------------------------------------------
-# Chat REPL
-# ---------------------------------------------------------------------------
+proc printSystemNote(text: string)  ## fwd
+proc printError(text: string)        ## fwd
+proc printAssistant(text: string)    ## fwd
+proc sessionExists*(dbPath, sessionId: string): bool   ## fwd
+proc listRecentSessions*(dbPath: string; limit: int = 20): seq[SessionSummary]   ## fwd
 
 proc readLine(prompt: string): tuple[line: string, eof: bool] =
   ## Reads a single line of input. Returns `(text, eof=true)` on EOF.
@@ -414,10 +545,7 @@ proc cmdSession*(
   printSystemNote(
     fmt"resuming session {sessionId} ({history.len} messages)")
   replayHistory(history)
-  ## NOTE: runAgentLoop always opens a *new* session under the hood. We
-  ## can't transparently extend the previous one without modifying the
-  ## existing memory module, so we tell the user and continue with a
-  ## fresh session for the new turns.
+  ## NOTE: runAgentLoop always opens a *new* session under the hood.
   printSystemNote(
     "starting a new session for follow-up turns " &
     "(history is read-only here)")
@@ -450,6 +578,159 @@ proc cmdHistory*(
   for s in sessions:
     echo fmt"{s.id:<40}  {s.updatedAt:<25}  {s.messageCount}"
   return 0
+
+# ---------------------------------------------------------------------------
+# Output formatting
+# ---------------------------------------------------------------------------
+
+proc printAssistant(text: string) =
+  stdout.writeLine("Mercury> " & text)
+  stdout.flushFile()
+
+proc printSystemNote(text: string) =
+  stdout.writeLine("[" & text & "]")
+  stdout.flushFile()
+
+proc printError(text: string) =
+  stderr.writeLine("error: " & text)
+  stderr.flushFile()
+
+# ---------------------------------------------------------------------------
+# Recent-sessions listing
+#
+# memory.nim does not expose a `listSessions` proc, so we open our own
+# read-only sqlite handle against the same db file. This keeps the
+# read-only modules untouched while still letting the CLI render the
+# `history` view.
+# ---------------------------------------------------------------------------
+
+proc listRecentSessions*(dbPath: string; limit: int = 20): seq[SessionSummary] =
+  ## Returns up to `limit` most-recently-updated sessions. Returns an
+  ## empty seq if the DB does not yet exist (no prior runs).
+  result = @[]
+  if not fileExists(dbPath):
+    return
+  let db = open(dbPath, "", "", "")
+  defer: db.close()
+  for row in db.fastRows(sql"""
+    SELECT s.id, s.created_at, s.updated_at,
+           (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id)
+    FROM sessions s
+    ORDER BY s.updated_at DESC
+    LIMIT ?
+  """, $limit):
+    result.add(SessionSummary(
+      id: row[0],
+      createdAt: row[1],
+      updatedAt: row[2],
+      messageCount: parseInt(row[3]),
+    ))
+
+proc sessionExists*(dbPath, sessionId: string): bool =
+  ## True if a session with the given id exists in the DB at `dbPath`.
+  if not fileExists(dbPath):
+    return false
+  let db = open(dbPath, "", "", "")
+  defer: db.close()
+  let row = db.getRow(
+    sql"SELECT id FROM sessions WHERE id = ?", sessionId)
+  return row[0].len > 0
+
+# ---------------------------------------------------------------------------
+# Persona run subcommand
+# ---------------------------------------------------------------------------
+
+proc defaultPersonasPath*(): string =
+  ## Returns the default personas config path: ~/.config/mercury/personas.toml
+  let home = getHomeDir()
+  if home.len == 0:
+    return ""
+  return home / ".config" / "mercury" / "personas.toml"
+
+proc cmdRunPersona*(
+    persona: seq[string];
+    task: seq[string];
+    config = "";
+    envFile = ".env";
+): int =
+  ## Run a named persona with a given task. Loads personas.toml and spawns
+  ## a child agent from the matching persona config.
+  if persona.len == 0:
+    printError("run requires a persona name")
+    return 2
+  if task.len == 0:
+    printError("run requires a task")
+    return 2
+
+  let personaName = persona[0]
+  let taskText = task.join(" ")
+
+  # Load config and build base dependencies
+  var ov = emptyOverrides()
+  ov.configPath = config
+  ov.envPath = envFile
+  var cfg: MercuryConfig
+  try:
+    cfg = loadConfigWithOverrides(ov)
+  except ConfigError as e:
+    printError(e.msg); return 2
+
+  # Load persona registry
+  let personasPath = defaultPersonasPath()
+  var reg = loadPersonasFile(personasPath)
+  if not reg.hasPersona(personaName):
+    printError("persona '" & personaName & "' not found in " & personasPath)
+    let available = reg.listPersonas()
+    if available.len > 0:
+      printError("available personas: " & available.join(", "))
+    else:
+      printError("(no personas loaded — check " & personasPath & ")")
+    return 3
+
+  # Build LLM client and memory
+  let llm = buildLLMClient(cfg)
+  var mem = openMemory(cfg)
+  defer: mem.close()
+
+  # Set agent globals so the delegate tool can work
+  setGlobalLLMClient(llm)
+  setPersonaRegistry(reg)
+
+  # Build filtered registry scoped to the persona
+  let pc = reg.getPersona(personaName)
+  var baseReg = newToolRegistry()
+  baseReg.register(shellTool())
+  let scopedReg = scopedRegistry(baseReg, pc)
+
+  # Build child agent config
+  var agentCfg = newAgentConfig(cfg)
+  if pc.systemPrompt.len > 0:
+    agentCfg.systemPrompt = pc.systemPrompt
+  if pc.maxIterations > 0:
+    agentCfg.maxIterations = pc.maxIterations
+  agentCfg.persona = pc
+  agentCfg.delegation = applyPersonaDelegation(
+    pc.maxDelegationDepth,
+    pc.maxDelegationsPerRun,
+    pc.name,
+  )
+
+  # Run the agent
+  printSystemNote("spawning persona '" & personaName & "'...")
+  var agentResult: AgentResult
+  try:
+    agentResult = runAgentLoop(agentCfg, llm, scopedReg, mem, taskText)
+  except CatchableError as e:
+    printError(e.msg); return 1
+
+  stdout.writeLine(agentResult.text)
+  if agentResult.stopReason != asrFinished:
+    printSystemNote("stop reason: " & $agentResult.stopReason)
+  return 0
+
+# ---------------------------------------------------------------------------
+# Search
+# ---------------------------------------------------------------------------
 
 proc cmdSearch*(
     query: seq[string];
@@ -645,6 +926,7 @@ when isMainModule:
   ##   mercury_agent session sess_...
   ##   mercury_agent history
   ##   mercury_agent search "needle"
+  ##   mercury_agent run code_reviewer "review the auth module"
   dispatchMulti(
     [cmdChat,    cmdName = "chat",    help = {
       "model":       "override model name",
@@ -677,6 +959,12 @@ when isMainModule:
     }],
     [cmdSearch,  cmdName = "search",  help = {
       "limit":       "max matches to show",
+      "config":      "path to TOML config (overrides default)",
+      "envFile":     "path to .env file (default: .env)",
+    }],
+    [cmdRunPersona, cmdName = "run", help = {
+      "persona":     "name of the persona to run (from personas.toml)",
+      "task":         "task description for the persona agent",
       "config":      "path to TOML config (overrides default)",
       "envFile":     "path to .env file (default: .env)",
     }],

@@ -32,6 +32,8 @@ import mercury_core/config
 import mercury_core/llm_client
 import mercury_core/tool_registry
 import mercury_core/memory
+import mercury_core/persona
+import mercury_core/delegate
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -61,6 +63,12 @@ type
     maxIterations*: int
     loopDetectionThreshold*: int
     systemPrompt*: string
+    persona*: PersonaConfig
+      ## Optional persona template. If set, the persona's memory scope
+      ## and delegation config are enforced during the run.
+    delegation*: DelegationConfig
+      ## Delegation safety bounds. Determines whether this agent can
+      ## spawn children and how deep nesting can go.
 
   AgentStats* = object
     ## Counters returned alongside the agent response, useful for tests
@@ -117,6 +125,7 @@ proc defaultAgentConfig*(): AgentConfig =
     maxIterations: DefaultMaxLoopIterations,
     loopDetectionThreshold: DefaultLoopDetectionThreshold,
     systemPrompt: DefaultSystemPrompt,
+    delegation: defaultDelegationConfig(),
   )
 
 # ---------------------------------------------------------------------------

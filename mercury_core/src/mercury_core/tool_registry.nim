@@ -51,16 +51,17 @@ type
     isError*: bool
     exitCode*: int
 
-  ToolExecuteProc* = proc (args: JsonNode): ToolResult {.gcsafe, raises: [].}
-    ## Executes a tool with the given JSON arguments. MUST NOT raise; any
+  ToolExecuteProc* = proc (args: JsonNode): ToolResult {.gcsafe.}
+    ## Executes a tool with the given JSON arguments. SHOULD NOT raise; any
     ## error condition should be returned as a ToolResult with isError=true.
+    ## The `{.gcsafe.}` pragma is required for safe capture in closures.
 
   Tool* = object
     ## A single callable tool exposed to the LLM.
     name*: string                     ## Unique name (e.g. "shell").
     description*: string              ## Short human/LLM-readable description.
     parameters*: JsonNode             ## JSON Schema for arguments.
-    execute*: ToolExecuteProc
+    execute*: proc (args: JsonNode): ToolResult
 
   ToolRegistry* = ref object
     ## A collection of named tools.
@@ -84,7 +85,7 @@ proc emptyParameters*(): JsonNode =
 proc newTool*(
     name, description: string;
     parameters: JsonNode;
-    execute: ToolExecuteProc;
+    execute: proc (args: JsonNode): ToolResult;
 ): Tool =
   ## Builds a `Tool` value. `parameters` should be a JSON Schema object
   ## (typically `{"type": "object", "properties": {...}, "required": [...]}`).
@@ -118,7 +119,7 @@ proc register*(
     reg: ToolRegistry;
     name, description: string;
     parameters: JsonNode;
-    execute: ToolExecuteProc;
+    execute: proc (args: JsonNode): ToolResult;
 ) =
   ## Convenience overload: builds a Tool and registers it in one step.
   reg.register(newTool(name, description, parameters, execute))
