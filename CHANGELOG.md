@@ -152,6 +152,9 @@ Initial release covering the completed foundation phases.
 - **mercury_core**: added `test_mcp_client.nim` — 8 tests covering config
   defaults/custom values, URL trailing-slash stripping, JSON-RPC request/response,
   error hierarchy, client construction, config integration
+- **mercury_core/config.nim**: added `[mcp_servers.<name>]` TOML section support
+  (url, auth_token, timeout_ms, enabled keys) and `MERCURY_MCP_SERVER_{N}_*`
+  environment variable support. Added 23 new config tests.
 - **.github/ISSUE_TEMPLATE/**: added bug_report.md, feature_request.md,
   ci_infrastructure.md, config.yml with labels and env/version fields
 - **.github/PULL_REQUEST_TEMPLATE/**: added pull_request_template.md with

@@ -353,3 +353,194 @@ suite "validate":
     cfg.dbPath = ""
     expect ConfigError:
       validate(cfg)
+
+# ---------------------------------------------------------------------------
+# Suite: MCP server configuration — TOML
+# ---------------------------------------------------------------------------
+
+suite "mcpServers TOML loading":
+  let tmpDir = getTempDir() / "mercury_test_mcp_toml"
+  setup: createDir(tmpDir)
+  teardown: removeDir(tmpDir)
+
+  test "loads single MCP server from TOML":
+    let cfgFile = tmpDir / "config.toml"
+    writeTempFile(cfgFile, """
+[mcp_servers.fst]
+url = "http://localhost:8080/mcp"
+auth_token = "secret123"
+timeout_ms = 5000
+enabled = true
+""")
+    let cfg = loadConfig(configPath = cfgFile, envFilePath = "/nonexistent/.env")
+    check cfg.mcpServers.len == 1
+    check cfg.mcpServers[0].url == "http://localhost:8080/mcp"
+    check cfg.mcpServers[0].authToken == "secret123"
+    check cfg.mcpServers[0].timeoutMs == 5000
+    check cfg.mcpServers[0].enabled == true
+
+  test "loads multiple MCP servers from TOML":
+    let cfgFile = tmpDir / "config.toml"
+    writeTempFile(cfgFile, """
+[mcp_servers.fst]
+url = "http://localhost:8080/mcp"
+
+[mcp_servers.second]
+url = "https://mcp.example.com/api"
+enabled = false
+""")
+    let cfg = loadConfig(configPath = cfgFile, envFilePath = "/nonexistent/.env")
+    check cfg.mcpServers.len == 2
+    check cfg.mcpServers[0].url == "http://localhost:8080/mcp"
+    check cfg.mcpServers[0].enabled == true
+    check cfg.mcpServers[1].url == "https://mcp.example.com/api"
+    check cfg.mcpServers[1].enabled == false
+
+  test "missing url field leaves server with default URL":
+    let cfgFile = tmpDir / "config.toml"
+    writeTempFile(cfgFile, """
+[mcp_servers.test]
+enabled = true
+""")
+    let cfg = loadConfig(configPath = cfgFile, envFilePath = "/nonexistent/.env")
+    check cfg.mcpServers.len == 1
+    # Should use default URL, not crash
+    check cfg.mcpServers[0].url == DefaultMcpServerUrl
+
+  test "TOML url trailing slash is stripped":
+    let cfgFile = tmpDir / "config.toml"
+    writeTempFile(cfgFile, """
+[mcp_servers.test]
+url = "http://localhost:8080/mcp/"
+""")
+    let cfg = loadConfig(configPath = cfgFile, envFilePath = "/nonexistent/.env")
+    check cfg.mcpServers[0].url == "http://localhost:8080/mcp"
+
+  test "invalid timeout_ms raises ConfigError":
+    let cfgFile = tmpDir / "config.toml"
+    writeTempFile(cfgFile, """
+[mcp_servers.test]
+url = "http://localhost:8080"
+timeout_ms = "not-an-integer"
+""")
+    expect ConfigError:
+      discard loadConfig(configPath = cfgFile, envFilePath = "/nonexistent/.env")
+
+  test "enabled = false disables server":
+    let cfgFile = tmpDir / "config.toml"
+    writeTempFile(cfgFile, """
+[mcp_servers.test]
+url = "http://localhost:8080/mcp"
+enabled = false
+""")
+    let cfg = loadConfig(configPath = cfgFile, envFilePath = "/nonexistent/.env")
+    check cfg.mcpServers.len == 1
+    check cfg.mcpServers[0].enabled == false
+
+  test "enabled = true enables server":
+    let cfgFile = tmpDir / "config.toml"
+    writeTempFile(cfgFile, """
+[mcp_servers.test]
+url = "http://localhost:8080/mcp"
+enabled = true
+""")
+    let cfg = loadConfig(configPath = cfgFile, envFilePath = "/nonexistent/.env")
+    check cfg.mcpServers[0].enabled == true
+
+  test "mcpServers empty by default":
+    let cfg = defaultConfig()
+    check cfg.mcpServers.len == 0
+
+  test "env var overrides TOML MCP server":
+    let cfgFile = tmpDir / "config.toml"
+    writeTempFile(cfgFile, """
+[mcp_servers.test]
+url = "http://localhost:8080/mcp"
+""")
+    withEnv("MERCURY_MCP_SERVER_0_URL", "http://override:9000/mcp"):
+      let cfg = loadConfig(configPath = cfgFile, envFilePath = "/nonexistent/.env")
+      # env adds a new server after TOML ones
+      check cfg.mcpServers.len == 2
+      check cfg.mcpServers[1].url == "http://override:9000/mcp"
+
+# ---------------------------------------------------------------------------
+# Suite: MCP server configuration — env vars
+# ---------------------------------------------------------------------------
+
+suite "mcpServers env var loading":
+  test "MERCURY_MCP_SERVER_0_URL creates server":
+    withEnv("MERCURY_MCP_SERVER_0_URL", "http://env-server:8080/mcp"):
+      let cfg = loadConfig(
+        configPath = "/nonexistent/config.toml",
+        envFilePath = "/nonexistent/.env"
+      )
+      check cfg.mcpServers.len == 1
+      check cfg.mcpServers[0].url == "http://env-server:8080/mcp"
+      check cfg.mcpServers[0].enabled == true
+
+  test "MERCURY_MCP_SERVER_0_AUTH_TOKEN sets token":
+    withEnv("MERCURY_MCP_SERVER_0_URL", "http://localhost:8080/mcp"):
+      withEnv("MERCURY_MCP_SERVER_0_AUTH_TOKEN", "my-secret-token"):
+        let cfg = loadConfig(
+          configPath = "/nonexistent/config.toml",
+          envFilePath = "/nonexistent/.env"
+        )
+        check cfg.mcpServers[0].authToken == "my-secret-token"
+
+  test "MERCURY_MCP_SERVER_0_TIMEOUT_MS sets timeout":
+    withEnv("MERCURY_MCP_SERVER_0_URL", "http://localhost:8080/mcp"):
+      withEnv("MERCURY_MCP_SERVER_0_TIMEOUT_MS", "15000"):
+        let cfg = loadConfig(
+          configPath = "/nonexistent/config.toml",
+          envFilePath = "/nonexistent/.env"
+        )
+        check cfg.mcpServers[0].timeoutMs == 15000
+
+  test "MERCURY_MCP_SERVER_0_ENABLED=false disables":
+    withEnv("MERCURY_MCP_SERVER_0_URL", "http://localhost:8080/mcp"):
+      withEnv("MERCURY_MCP_SERVER_0_ENABLED", "false"):
+        let cfg = loadConfig(
+          configPath = "/nonexistent/config.toml",
+          envFilePath = "/nonexistent/.env"
+        )
+        check cfg.mcpServers[0].enabled == false
+
+  test "multiple env var servers":
+    withEnv("MERCURY_MCP_SERVER_0_URL", "http://first:8080"):
+      withEnv("MERCURY_MCP_SERVER_1_URL", "http://second:9000"):
+        withEnv("MERCURY_MCP_SERVER_2_URL", "http://third:7000"):
+          let cfg = loadConfig(
+            configPath = "/nonexistent/config.toml",
+            envFilePath = "/nonexistent/.env"
+          )
+          check cfg.mcpServers.len == 3
+          check cfg.mcpServers[0].url == "http://first:8080"
+          check cfg.mcpServers[1].url == "http://second:9000"
+          check cfg.mcpServers[2].url == "http://third:7000"
+
+  test "gap in index stops parsing":
+    withEnv("MERCURY_MCP_SERVER_0_URL", "http://first:8080"):
+      withEnv("MERCURY_MCP_SERVER_2_URL", "http://third:9000"):
+        let cfg = loadConfig(
+          configPath = "/nonexistent/config.toml",
+          envFilePath = "/nonexistent/.env"
+        )
+        # Stops at gap — only server 0 is created, server 2 is never reached
+        check cfg.mcpServers.len == 1
+        check cfg.mcpServers[0].url == "http://first:8080"
+
+  test "invalid timeout env var raises ConfigError":
+    withEnv("MERCURY_MCP_SERVER_0_URL", "http://localhost:8080"):
+      withEnv("MERCURY_MCP_SERVER_0_TIMEOUT_MS", "not-a-number"):
+        expect ConfigError:
+          discard loadConfig(
+            configPath = "/nonexistent/config.toml",
+            envFilePath = "/nonexistent/.env"
+          )
+
+  test "no env vars means no MCP servers":
+    let cfg = loadConfig(
+      configPath = "/nonexistent/config.toml",
+      envFilePath = "/nonexistent/.env"
+    )
+    check cfg.mcpServers.len == 0

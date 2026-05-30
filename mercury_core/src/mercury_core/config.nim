@@ -98,6 +98,67 @@ proc parseCsvList(val: string): seq[string] =
     if stripped.len > 0:
       result.add(stripped)
 
+# ---------------------------------------------------------------------------
+# MCP server config parsing (TOML and env)
+# ---------------------------------------------------------------------------
+
+type
+  McpServerEntry* = object
+    ## Temporary storage for a single [mcp_servers.name] block during TOML
+    ## parsing. Fields that are not set in the TOML remain as empty/zero
+    ## defaults and are filled in by `newMcpServerConfig()` at the end.
+    name*: string
+    url*: string
+    authToken*: string
+    timeoutMs*: int
+    enabled*: bool
+
+proc parseMcpServerEntry(entry: McpServerEntry): McpServerConfig =
+  ## Converts a parsed `McpServerEntry` into a `McpServerConfig`, filling in
+  ## any missing values with defaults. Strips trailing slashes from URL.
+  result = McpServerConfig(
+    url: entry.url.strip(trailing = true, chars = {'/'}),
+    authToken: entry.authToken,
+    timeoutMs: if entry.timeoutMs > 0: entry.timeoutMs else: DefaultMcpTimeoutMs,
+    enabled: entry.enabled,
+  )
+
+proc applyEnvMcpServers*(cfg: var MercuryConfig) =
+  ## Applies MCP server configuration from environment variables.
+  ##
+  ## Format: MERCURY_MCP_SERVER_<N>_URL, MERCURY_MCP_SERVER_<N>_AUTH_TOKEN,
+  ##          MERCURY_MCP_SERVER_<N>_TIMEOUT_MS, MERCURY_MCP_SERVER_<N>_ENABLED
+  ## where <N> is a zero-based index. Stop at first gap in sequence.
+  ##
+  ## Example:
+  ##   MERCURY_MCP_SERVER_0_URL=http://localhost:8080/mcp
+  ##   MERCURY_MCP_SERVER_0_AUTH_TOKEN=secret123
+  ##   MERCURY_MCP_SERVER_1_URL=https://mcp.example.com
+  var i = 0
+  while true:
+    let urlEnv = "MERCURY_MCP_SERVER_" & $i & "_URL"
+    let url = getEnv(urlEnv)
+    if url.len == 0:
+      break  # No more servers configured
+    var entry = McpServerEntry(name: $i, url: url)
+    let auth = getEnv("MERCURY_MCP_SERVER_" & $i & "_AUTH_TOKEN")
+    if auth.len > 0:
+      entry.authToken = auth
+    let timeoutEnv = "MERCURY_MCP_SERVER_" & $i & "_TIMEOUT_MS"
+    let timeoutStr = getEnv(timeoutEnv)
+    if timeoutStr.len > 0:
+      try:
+        entry.timeoutMs = parseInt(timeoutStr)
+      except ValueError:
+        raise newException(ConfigError,
+          timeoutEnv & " must be an integer, got: " & timeoutStr)
+    let enabledEnv = "MERCURY_MCP_SERVER_" & $i & "_ENABLED"
+    let enabledStr = getEnv(enabledEnv)
+    if enabledStr.len > 0:
+      entry.enabled = enabledStr.toLowerAscii() in @["1", "true", "yes", "on"]
+    cfg.mcpServers.add(parseMcpServerEntry(entry))
+    inc i
+
 proc applyTomlSection(cfg: var MercuryConfig; section, key, val: string) =
   ## Applies a single key-value pair from the TOML/INI config to cfg.
   ## Section "" means the global/root section.
@@ -159,6 +220,15 @@ proc loadTomlFile(cfg: var MercuryConfig; path: string) =
   var parser: CfgParser
   open(parser, stream, path)
   defer: close(parser)
+
+  # Accumulators for [mcp_servers.<name>] blocks.
+  # We can't use applyTomlSection because it handles one key-value at a time
+  # and we need to collect all fields for a given server before creating the
+  # McpServerConfig. Parsed here, applied at EOF.
+  var mcpEntries: seq[McpServerEntry] = @[]
+  var currentMcpServer = ""
+  var mcpBuf = McpServerEntry()
+
   var currentSection = ""
   while true:
     let event = next(parser)
@@ -166,18 +236,52 @@ proc loadTomlFile(cfg: var MercuryConfig; path: string) =
     of cfgEof:
       break
     of cfgSectionStart:
+      # New section — flush any pending MCP server entry first.
+      if currentMcpServer.len > 0 and mcpBuf.url.len > 0:
+        mcpEntries.add(mcpBuf)
+
       currentSection = event.section
+      let sec = currentSection.toLowerAscii()
+      if sec.startsWith("mcp_servers."):
+        currentMcpServer = sec
+        mcpBuf = McpServerEntry(name: sec)
+      else:
+        currentMcpServer = ""
     of cfgKeyValuePair:
-      try:
-        applyTomlSection(cfg, currentSection, event.key, event.value)
-      except ValueError as e:
-        raise newException(ConfigError,
-          "Invalid value for key '" & event.key & "' in " & path & ": " & e.msg)
+      if currentMcpServer.len > 0:
+        # Inside a [mcp_servers.<name>] block — accumulate into mcpBuf.
+        let k = event.key.toLowerAscii()
+        case k
+        of "url":          mcpBuf.url = event.value
+        of "auth_token":   mcpBuf.authToken = event.value
+        of "timeout_ms":
+          try:
+            mcpBuf.timeoutMs = parseInt(event.value)
+          except ValueError:
+            raise newException(ConfigError,
+              "Invalid timeout_ms in " & path & ": " & event.value)
+        of "enabled":
+          mcpBuf.enabled = event.value.toLowerAscii() in @["1", "true", "yes", "on"]
+        else: discard
+      else:
+        try:
+          applyTomlSection(cfg, currentSection, event.key, event.value)
+        except ValueError as e:
+          raise newException(ConfigError,
+            "Invalid value for key '" & event.key & "' in " & path & ": " & e.msg)
     of cfgOption:
       discard
     of cfgError:
       raise newException(ConfigError,
         "Parse error in " & path & ": " & event.msg)
+
+  # Flush any remaining MCP server entry.
+  if currentMcpServer.len > 0 and mcpBuf.url.len > 0:
+    mcpEntries.add(mcpBuf)
+
+  # Apply all collected MCP server entries.
+  for entry in mcpEntries:
+    cfg.mcpServers.add(parseMcpServerEntry(entry))
 
 proc applyEnvVars(cfg: var MercuryConfig) =
   ## Applies environment variable overrides to cfg.
@@ -232,6 +336,9 @@ proc applyEnvVars(cfg: var MercuryConfig) =
   let apiKey = getEnv("OPENROUTER_API_KEY")
   if apiKey.len > 0:
     cfg.openrouterApiKey = apiKey
+
+  # Apply MCP server configuration from environment variables.
+  applyEnvMcpServers(cfg)
 
 proc validate*(cfg: MercuryConfig) =
   ## Validates the configuration, raising ConfigError on invalid values.
