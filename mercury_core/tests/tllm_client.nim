@@ -73,7 +73,7 @@ proc sendResponse(client: Socket; resp: MockResponse) =
   client.send(payload)
 
 proc serverLoop(srv: MockServer) {.thread.} =
-  while true:
+  while srv.running:
     var client: Socket
     try:
       srv.socket.accept(client)
@@ -122,8 +122,18 @@ proc stopMockServer(srv: MockServer) =
   if not srv.running:
     return
   srv.running = false
-  try: srv.socket.close() except CatchableError: discard
+  # Connect a dummy client so that accept() in the thread unblocks (the
+  # loop will exit because srv.running is now false).  On some platforms
+  # close() alone does not reliably wake a blocked accept().
+  var dummy = newSocket()
+  try:
+    dummy.connect("127.0.0.1", Port(srv.port))
+  except CatchableError:
+    discard
+  finally:
+    try: dummy.close() except CatchableError: discard
   joinThread(srv.thread)
+  try: srv.socket.close() except CatchableError: discard
   deinitLock(srv.lock)
 
 proc enqueue(srv: MockServer; statusLine, body: string) =
