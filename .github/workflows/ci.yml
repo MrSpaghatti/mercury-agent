@@ -45,13 +45,10 @@ jobs:
         working-directory: mercury_core
         run: nimble install -y
 
-      - name: Install nimble dependencies (agent)
+      # mercury_core is a library — nimble build does nothing, skip it.
+      - name: Install agent dependencies only
         working-directory: mercury_agent
-        run: nimble install -y
-
-      - name: Build core
-        working-directory: mercury_core
-        run: nimble build -y
+        run: nimble install --depsOnly -y
 
       - name: Test core
         working-directory: mercury_core
