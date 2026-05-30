@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NIMBLE_DIR: ~/.nimble
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        nim-version:
+          - "2.0.8"
+          - "2.2.2"
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libsqlite3-dev
+
+      - name: Setup Nim ${{ matrix.nim-version }}
+        uses: nim-works/setup-nim@v1
+        with:
+          nim-version: ${{ matrix.nim-version }}
+
+      - name: Cache nimble packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nimble
+          key: nimble-${{ matrix.nim-version }}-${{ hashFiles('**/*.nimble') }}
+          restore-keys: |
+            nimble-${{ matrix.nim-version }}-
+            nimble-
+
+      - name: Install nimble dependencies (core)
+        working-directory: mercury_core
+        run: nimble install -y
+
+      - name: Install nimble dependencies (agent)
+        working-directory: mercury_agent
+        run: nimble install -y
+
+      - name: Build core
+        working-directory: mercury_core
+        run: nimble build -y
+
+      - name: Test core
+        working-directory: mercury_core
+        run: nimble test -y
+        env:
+          CI: "true"
+
+      - name: Build agent
+        working-directory: mercury_agent
+        run: nimble build -y
+
+      - name: Test agent
+        working-directory: mercury_agent
+        run: nimble test -y
+        env:
+          CI: "true"

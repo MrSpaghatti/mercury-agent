@@ -71,6 +71,7 @@ AI agent with:
 | `.gitignore` | ✅ Covers all build artifacts |
 | Architectural review | ✅ `report.md` written |
 | Deep code audit (all 40+ source files) | ✅ 312 tests pass, 0 critical issues found |
+| CI pipeline (GitHub Actions) | 🔄 Workflow written, awaiting first run |
 
 ---
 

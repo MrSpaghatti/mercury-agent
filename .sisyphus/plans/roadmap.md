@@ -37,12 +37,15 @@ because SSL-aware exception tracking catches broader error types.
 
 ### P0 — CI Pipeline (estimated: 1 session)
 
+**Status: 🔄 In Progress — workflow written, first run pending**
+
 GitHub Actions workflow for automated quality gates.
 
 - Trigger: push / PR to `main`
-- Steps: `nimble install` → `make build` → `make test` → `make desloppify`
-- Nim version matrix: 2.0.x, 2.2.x (core only)
-- Optional: build binaries and upload as release artifacts
+- Steps: `nimble install` → `make build` → `make test`
+- Nim version matrix: 2.0.x, 2.2.x
+- Cached nimble packages for faster subsequent runs
+- Future: add `make desloppify`, upload release artifacts
 
 **Acceptance**: Green CI badge on every push.
 

@@ -1,5 +1,7 @@
 # Mercury Agent
 
+[![CI](https://github.com/MrSpaghatti/mercury-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/MrSpaghatti/mercury-agent/actions/workflows/ci.yml)
+
 Mercury is a small, self-contained Nim **AI agent** built around the
 OpenAI Chat Completions protocol. It speaks to any OpenAI-compatible
 endpoint (OpenRouter, vLLM, OpenAI, …), exposes tools to the model via
