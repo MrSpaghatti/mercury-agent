@@ -109,4 +109,26 @@ Initial release covering the completed foundation phases.
 - `.sisyphus/plans/roadmap.md`: Project roadmap with P0/P1/P2/P3 tiers and
   quick wins
 
+## [Unreleased]
+
+### Added
+
+- **mercury_code** — autonomous coding harness binary:
+  - `code_runner.nim`: `CodingHarnessConfig`, `CompileResult`/`CompileError`,
+    `parseNimErrors()`, `formatCompileResult()`
+  - `code_tool.nim`: `compileTool`, `testTool`, `readFileTool`, `writeFileTool`
+    (all `{.gcsafe, raises: [].}` closures matching shell tool pattern)
+  - `compile.nim`: subprocess execution with timeout and 512 KiB output cap
+  - `mercury_code.nim`: CLI entry point (`--task`, `--version`, `--help`)
+  - `tcode_runner.nim`: 11 tests (formatter, error parser, config defaults)
+- **build_llm_client.nim** (mercury_core): shared `MercuryConfig → LLMClient`
+  builder used by both `mercury_agent` and `mercury_code`
+
+### Changed
+
+- **CI pipeline** (`.github/workflows/ci.yml`): added build + test steps for
+  `mercury_code` package on both Nim 2.0.8 and 2.2.2
+- **.gitignore**: added `mercury_code/src/mercury_code/mercury_code` and
+  `mercury_code/tcode_runner` build artifacts
+
 [0.1.0]: https://github.com/MrSpaghatti/mercury-agent/compare/initial...v0.1.0

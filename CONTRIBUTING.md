@@ -99,12 +99,16 @@ make desloppify
 ```
 mercury/
 ├── mercury_core/              # Shared library (no binary)
-│   ├── src/mercury_core/      # 18 source modules
+│   ├── src/mercury_core/      # 18 source modules (incl. build_llm_client.nim)
 │   └── tests/                 # 20+ test files
 ├── mercury_agent/             # CLI + Discord daemon binary
-│   ├── src/                   # agent_loop.nim, mercury_agent.nim, tools/
-│   └── tests/                 # tagent_loop, tcli, tintegration
-├── mercury_code/              # Placeholder for coding harness
+│   ├── src/                   # agent_loop.nim, mercury_agent.nim,
+│   │                         # build_llm_client.nim, tools/
+│   └── tests/                 # tagent_loop, tcli, tintegration, test_shell_tool
+├── mercury_code/              # Autonomous coding harness binary
+│   ├── src/mercury_code/      # mercury_code.nim, code_runner.nim,
+│   │                         # code_tool.nim, compile.nim, config.nims
+│   └── tests/                 # tcode_runner (11 tests)
 ├── Makefile                   # build/test/lint shortcuts
 └── *.md                       # Documentation
 ```
@@ -128,6 +132,12 @@ discord.nim ──▶ discord_commands.nim ──▶ agent_dispatcher.nim ──
      ├── discord_mocks.nim                       ├── file_tool.nim
      ├── message_chunker.nim                     ├── rate_limit.nim
      └── thread_mapping.nim                      └── file_path_validator.nim
+
+mercury_code.nim ──▶ agent_loop ──▶ build_llm_client ──▶ llm_client
+     │
+     ├── code_runner.nim   (CompileResult, parseNimErrors, CodingHarnessConfig)
+     ├── code_tool.nim     (compile, test, read_file, write_file tools)
+     └── compile.nim       (subprocess execution with timeout)
 ```
 
 ---
