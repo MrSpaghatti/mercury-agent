@@ -14,7 +14,9 @@
 | 3.1–3.3 | CLI + integration | mercury_agent.nim, tcli, tintegration |
 | Phase 2 | Discord bot | discord.nim, permission, file_tool, agent_dispatcher |
 | P0 | SSL build fix | `config.nims` with `--define:ssl` |
-| P0 | Deep code audit | All 40+ source files audited, 312 tests verified |
+| P0 | CI pipeline | GitHub Actions on Nim 2.0.8 + 2.2.2 |
+| P0 | Deep code audit | All 40+ source files audited, 312+ tests verified |
+| P1 | mercury_code | code_runner, code_tool, compile, harness CLI |
 
 ---
 
@@ -52,35 +54,44 @@ Fixes applied during CI setup:
 - Fixed `tllm_client` mock server thread hang (added `sleep(50)` in accept loop)
 - Added `libpcre3-dev` for 2.0.x `std/re` support
 - Removed brittle `durationMs < 3000` assertion from shell timeout test
+- Updated CI to test mercury_code package (build + test steps)
 
 **Acceptance**: ✅ Green CI on both Nim 2.0.8 and 2.2.2.
 
 ### P1 — mercury_code Package (estimated: 2–3 sessions)
 
-The placeholder `mercury_code/` package is empty. This implements the
-autonomous coding harness.
+**Status: ✅ Complete**
 
-**Scope**:
-- Scaffold the Nimble package with the same layout as `mercury_core`
-- Define `CodingHarnessConfig` extending `MercuryConfig` with:
-  - Allowed file extensions for reading/writing
-  - Build/test commands per language
-  - Sandbox root directory for code execution
-- Implement `sandboxedCompile(cmd: string): CompileResult` proc that
-  runs a build command in a containerized or subprocess environment
-- Implement `parseCompilerOutput(output: string): seq[CompileError]` to
-  extract file+line+message from common compiler formats
-- Wire the coding harness into the ReAct loop as a special tool category
+The `mercury_code/` package is no longer a placeholder. It implements a
+self-contained coding harness binary that reuses the ReAct loop from
+`mercury_agent` but with coding-specific tools.
 
-**Design principle**: The ReAct loop already feeds tool errors back to
-the LLM. The coding harness extends this: the agent writes code, compiles
-it, gets errors, fixes them, recompiles — all within the existing loop
-with configurable iteration cap.
+**Files delivered**:
+- `mercury_code.nim` — CLI binary (`--task`, `--version`, `--help`), wires
+  CodingHarnessConfig into agent loop
+- `code_runner.nim` — `CodingHarnessConfig` type, `CompileResult` /
+  `CompileError` types, `parseNimErrors()`, `formatCompileResult()`
+- `code_tool.nim` — `compileTool`, `testTool`, `readFileTool`,
+  `writeFileTool` (all with `{.gcsafe, raises: [].}` closures)
+- `compile.nim` — subprocess execution with timeout, output capture,
+  truncation at 512 KiB
+- `config.nims` — Nimble switches for path resolution and `-d:ssl`
+- `tcode_runner.nim` — 11 tests covering formatter, parser, and config
+  defaults
+- Added `build_llm_client.nim` to `mercury_core` for shared
+  `MercuryConfig → LLMClient` construction
 
-**Not in scope (deferred)**:
-- Docker container sandboxing
-- Branch-per-experiment isolation
-- Auto-pr creation
+**Key decisions**:
+- Uses `{.gcsafe, raises: [].}` procs as closures in tool execute procs,
+  matching `makeShellExecuteProc` pattern in `mercury_agent`
+- Parses Nim's `path(line, col) [severity] message` format for structured
+  error reporting
+- Extension allowlist enforced at the tool level before file access
+- Absolute paths in `config.nims` to avoid CI path resolution issues
+- `newTool` called via `result =` to satisfy the `ToolExecuteProc` closure
+  type requirement
+
+**Acceptance**: 11/11 tests pass, binary compiles and runs `--help`.
 
 ### P2 — MCP Support (estimated: 2 sessions)
 

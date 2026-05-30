@@ -65,3 +65,13 @@ jobs:
         run: nimble test -y
         env:
           CI: "true"
+
+      - name: Build code
+        working-directory: mercury_code
+        run: nimble build -y
+
+      - name: Test code
+        working-directory: mercury_code
+        run: nimble test -y
+        env:
+          CI: "true"

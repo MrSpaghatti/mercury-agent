@@ -61,12 +61,16 @@ mercury/
 │   │                   # agent_dispatcher, permission,
 │   │                   # file_path_validator, file_tool,
 │   │                   # message_chunker, rate_limit,
-│   │                   # thread_mapping
+│   │                   # thread_mapping, build_llm_client
 │   └── tests/          # 20+ test files covering all modules
 ├── mercury_agent/      # CLI binary (mercury_agent.nim,
-│   ├── src/            # agent_loop.nim, tools/shell.nim)
+│   ├── src/            # agent_loop.nim, tools/shell.nim,
+│   │                   # build_llm_client.nim)
 │   └── tests/          # tagent_loop, tcli, tintegration, test_shell_tool
-├── mercury_code/       # coding harness (placeholder)
+├── mercury_code/       # autonomous coding harness binary
+│   ├── src/            # mercury_code.nim, code_runner.nim,
+│   │                   # code_tool.nim, compile.nim, config.nims
+│   └── tests/          # tcode_runner (11 tests)
 ├── Makefile
 └── README.md           # this file
 ```
@@ -346,8 +350,9 @@ The target runs `python3 -m desloppify scan --path .` on demand.
 
 ## Development Status
 
-Mercury is currently **Phase 1 (Foundation) + Phase 2 (Discord) — both
-complete**. See `STATUS.md` for the full status breakdown.
+Mercury is currently **Phase 1 (Foundation) + Phase 2 (Discord) +
+ Phase 3 P1 (mercury_code) — all complete**. See `STATUS.md` for the
+ full status breakdown.
 
 ### Roadmap
 
@@ -357,11 +362,12 @@ complete**. See `STATUS.md` for the full status breakdown.
 | 2.1–2.3 | Agent core (tools, ReAct loop, mocks) | ✅ Complete |
 | 3.1–3.3 | CLI, integration, end-to-end tests | ✅ Complete |
 | Phase 2 | Discord bot with permissions, threads, file tools | ✅ Complete |
-| P0 | CI pipeline (GitHub Actions) | 🔜 Planned |
-| P0 | Deep code audit (40+ source files, 312 tests) | ✅ Complete |
-| P1 | `mercury_code` — autonomous coding harness | 🔜 Planned |
+| P0 | CI pipeline (GitHub Actions on Nim 2.0.8 + 2.2.2) | ✅ Complete |
+| P0 | Deep code audit (40+ source files, 312+ tests) | ✅ Complete |
+| P1 | `mercury_code` — coding harness (compile, test, read_file, write_file) | ✅ Complete |
 | P2 | MCP support for external tool discovery | 🔜 Planned |
 | P2 | Sub-agent delegation for parallel work | 🔜 Planned |
+| P3 | Web UI (lightweight HTTP chat frontend) | 🔜 Planned |
 
 ## License
 

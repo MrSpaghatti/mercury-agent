@@ -125,7 +125,7 @@ shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
 
 ## Files by Layer
 
-### mercury_core (17 modules)
+### mercury_core (18 modules)
 | File | Role |
 |------|------|
 | `config.nim` | Layered config (TOML + .env + env vars) |
@@ -133,6 +133,7 @@ shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
 | `token_counter.nim` | Heuristic token estimation |
 | `memory.nim` | SQLite + FTS5 persistence |
 | `tool_registry.nim` | Named tool registration + JSON schema export |
+| `build_llm_client.nim` | MercuryConfig → LLMClient builder |
 | `discord.nim` | DI-based Discord bot |
 | `discord_bridge.nim` | Real Discord API adapter (Dimscord) |
 | `discord_commands.nim` | Bot command handlers |
@@ -146,16 +147,23 @@ shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
 | `rate_limit.nim` | Per-user token bucket rate limiter |
 | `thread_mapping.nim` | Discord→agent thread persistence |
 
-### mercury_agent (4 modules)
+### mercury_agent (5 modules)
 | File | Role |
 |------|------|
 | `mercury_agent.nim` | CLI entry point + subcommand dispatch |
 | `agent_loop.nim` | ReAct loop: LLM → tool → loop |
+| `build_llm_client.nim` | MercuryConfig → LLMClient builder |
 | `tools/shell.nim` | Sandboxed shell tool with deny-list, timeout |
 | `tools/` | Tool implementations directory |
 
-### mercury_code (placeholder)
-Empty package reserved for the coding harness (future Phase).
+### mercury_code (5 modules)
+| File | Role |
+|------|------|
+| `mercury_code.nim` | CLI binary entry point |
+| `code_runner.nim` | CompileResult, parseNimErrors, CodingHarnessConfig |
+| `code_tool.nim` | compile/test/read_file/write_file tools |
+| `compile.nim` | Subprocess compile execution with timeout |
+| `config.nims` | Nimble compiler switches (-d:ssl, path resolution) |
 
 ---
 
@@ -165,9 +173,10 @@ Empty package reserved for the coding harness (future Phase).
 |---------|-----------|-------|--------|
 | mercury_core (Wave 1) | tconfig, tllm_client, ttoken_counter, tmemory | 92 | ✅ All pass |
 | mercury_core (Wave 2) | ttool_registry, test_mock_server | 18 | ✅ All pass |
-| mercury_core (Discord) | test_discord_*, test_e2e_discord, test_permission, test_file_*, test_rate_limit, test_thread_*, test_agent_dispatcher, test_message_chunker | 151 | ✅ All pass |
+| mercury_core (Discord) | test_permission, test_file_*, test_rate_limit, test_thread_*, test_agent_dispatcher, test_message_chunker | 151 | ✅ All pass |
 | mercury_agent | tcli, tagent_loop, tintegration, test_shell_tool | 51 | ✅ All pass |
-| **Total** | **23 test files** | **312** | **✅ 0 FAILED** |
+| mercury_code | tcode_runner | 11 | ✅ All pass |
+| **Total** | **24 test files** | **323** | **✅ 0 FAILED** |
 
 ---
 
@@ -178,10 +187,10 @@ Near-term candidates (in priority order):
 
 1. **~~CI pipeline (P0)~~** ✅ — GitHub Actions running on Nim 2.0.8 and 2.2.2.
    Green CI badge on every push.
-2. **CHANGELOG.md** — Create release history for v0.1.0.
-3. **mercury_code package (P1)** — Build the autonomous coding harness
-   (Phase 3).
-4. **MCP support (P2)** — Integrate Model Context Protocol for external
+2. **~~mercury_code package (P1)~~** ✅ — Autonomous coding harness with compile,
+   test, read_file, write_file tools. 11 tests pass.
+3. **MCP support (P2)** — Integrate Model Context Protocol for external
    tool discovery.
-5. **Sub-agent delegation (P2)** — Allow the ReAct loop to spawn child
+4. **Sub-agent delegation (P2)** — Allow the ReAct loop to spawn child
    agents for parallel exploration.
+5. **Web UI (P3)** — Lightweight HTTP chat frontend.

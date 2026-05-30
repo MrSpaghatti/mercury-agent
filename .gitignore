@@ -44,3 +44,5 @@ mercury_core/tests/test_permission
 mercury_core/tests/test_rate_limit
 mercury_core/tests/test_thread_mapping
 mercury_core/tests/test_thread_reconnection
+mercury_code/src/mercury_code/mercury_code
+mercury_code/tcode_runner
