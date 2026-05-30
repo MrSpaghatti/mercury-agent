@@ -60,7 +60,7 @@ proc handleConfigCommand*(args: string, authorId: string, cfg: DiscordConfig): C
     return CommandResult(response: "Config reload requested. Reload must be handled by the bot runtime.", updatedConfig: none[DiscordConfig]())
 
   of "allowlist":
-    let allowlistParts = if parts.len >= 2: parts[1 ..< 1 + (parts.len - 1)] else: @[]
+    let allowlistParts = if parts.len >= 2: parts[1 .. ^1] else: @[]
     if allowlistParts.len == 0:
       return CommandResult(response: "Usage: !config allowlist <add|remove|list> [path]", updatedConfig: none[DiscordConfig]())
 

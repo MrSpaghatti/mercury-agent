@@ -509,6 +509,14 @@ proc makeArchiveThreadFn(api: RealDiscordApi): ArchiveThreadFn =
     await api.archiveThread(threadId)
   return archive
 
+proc sendWithLogging*(sendFn: SendMessageFn; channelId, content: string): Future[void] {.async.} =
+  ## Sends a message to Discord, logging errors to stderr instead of
+  ## letting asyncCheck silently swallow them.
+  try:
+    discard await sendFn(channelId, content)
+  except CatchableError as e:
+    stderr.writeLine("[daemon] failed to send message: " & e.msg)
+
 # ---------------------------------------------------------------------------
 # Daemon command
 # ---------------------------------------------------------------------------
@@ -567,9 +575,12 @@ proc cmdDaemon*(
   # Open memory store
   var mem = openMemory(cfg)
 
-  # Open thread-mapping DB
+  # Open thread-mapping DB with WAL mode and busy timeout
+  # to avoid SQLITE_BUSY when the memory module writes concurrently.
   let threadDbPath = resolveDbPath(cfg)
   let threadDb = open(threadDbPath, "", "", "")
+  threadDb.exec(sql"PRAGMA journal_mode=WAL")
+  threadDb.exec(sql"PRAGMA busy_timeout=5000")
   initThreadMappingSchema(threadDb)
 
   # Create Dimscord client
@@ -588,7 +599,7 @@ proc cmdDaemon*(
                else: r.responseText
     let chunks = chunkMessage(text)
     for chunk in chunks:
-      asyncCheck sendFn(r.channelId, chunk)
+      asyncCheck sendWithLogging(sendFn, r.channelId, chunk)
   )
 
   # Create the DI-based DiscordBot with real API callbacks
@@ -603,9 +614,7 @@ proc cmdDaemon*(
     shard = shard,
   )
 
-  # Graceful shutdown: SIGINT/SIGTERM closes DBs
-  setControlCHook(onCtrlC)
-
+  # Graceful shutdown handled by the setControlCHook above
   # Start the Discord bot (blocks until session ends or error)
   try:
     waitFor startDiscordBot(discord, bot)

@@ -22,7 +22,7 @@ suite "DiscordBot (DI-based)":
   proc makeBot(admins: seq[string] = @["admin1"], users: seq[string] = @[]): tuple[bot: DiscordBot, api: MockDiscordApi, db: DbConn] =
     let api = newMockDiscordApi()
     let cfg = makeConfig(admins = admins, users = users)
-    let dispatcher = newAgentDispatcher(proc(r: AgentResult) {.gcsafe.} = discard)
+    let dispatcher = newAgentDispatcher(proc(r: AgentResult) = discard)
     let shard = newMockShard("bot_user_id")
     let db = makeDb()
     let bot = newDiscordBot(
@@ -140,7 +140,7 @@ suite "DiscordBot (DI-based)":
   test "regular message triggers typing and agent dispatch":
     let api = newMockDiscordApi()
     let cfg = makeConfig(admins = @["admin1"], users = @["user1"])
-    let dispatcher = newAgentDispatcher(proc(r: AgentResult) {.gcsafe.} = discard)
+    let dispatcher = newAgentDispatcher(proc(r: AgentResult) = discard)
     let shard = newMockShard("bot_user_id")
     let db = makeDb()
     let bot = newDiscordBot(
@@ -160,14 +160,15 @@ suite "DiscordBot (DI-based)":
       content: "hello agent",
       channel_id: "chan1",
       guild_id: some("guild1"),
-      mention_users: @[],
+      mention_users: @[MockUser(id: "bot_user_id", username: "bot", bot: false)],
     )
     waitFor bot.onMessageCreate(msg)
     var foundTyping = false
     for call in api.calls:
       if call.kind == mockTriggerTyping:
         foundTyping = true
-        check call.channelId == "chan1"
+        # Typing should happen in the newly created thread, not the original channel
+        check call.channelId == "thread_1"
     check foundTyping
 
   test "prefix-only message with no command is ignored":

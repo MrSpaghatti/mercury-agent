@@ -33,10 +33,14 @@ the agent or browsing past sessions.
   Completions endpoint. Built-in defaults for OpenRouter and vLLM.
 - **Tool calling** — register Nim procs as tools; the model invokes
   them via OpenAI function-calling. Ships with a sandboxed `shell`
-  tool (deny-list + per-call timeout).
+  tool (deny-list + per-call timeout), plus `file_read` and
+  `file_write` tools with path-based allow/deny policies.
 - **Persistent memory** — every conversation is logged to SQLite with
   a FTS5 full-text index over message content.
 - **CLI** — `chat`, `ask`, `session`, `history`, `search`.
+- **Discord daemon** — run Mercury as a Discord bot with DI-based
+  architecture, permission system, thread management, rate limiting,
+  and offline-testable mock API.
 - **Loop & error safety** — agent loop has loop-detection, max-iteration
   limits, and graceful handling of LLM/tool errors.
 - **Layered configuration** — defaults < TOML config < .env <
@@ -46,12 +50,21 @@ the agent or browsing past sessions.
 
 ```
 mercury/
-├── mercury_core/       # shared library (config, llm_client, memory,
-│   ├── src/            # tool_registry, token_counter)
-│   └── tests/          #   - mock_server for integration tests
-├── mercury_agent/      # CLI binary (agent_loop + tools/shell)
-│   ├── src/
-│   └── tests/          #   - tagent_loop, tcli, tintegration
+├── mercury_core/       # shared library
+│   ├── src/            # config, llm_client, memory,
+│   │                   # tool_registry, token_counter,
+│   │                   # discord.nim (DI bot),
+│   │                   # discord_bridge, discord_commands,
+│   │                   # discord_types, discord_mocks,
+│   │                   # agent_dispatcher, permission,
+│   │                   # file_path_validator, file_tool,
+│   │                   # message_chunker, rate_limit,
+│   │                   # thread_mapping
+│   └── tests/          # 20+ test files covering all modules
+├── mercury_agent/      # CLI binary (mercury_agent.nim,
+│   ├── src/            # agent_loop.nim, tools/shell.nim)
+│   └── tests/          # tagent_loop, tcli, tintegration
+├── mercury_code/       # coding harness (placeholder)
 ├── Makefile
 └── README.md           # this file
 ```
@@ -121,6 +134,10 @@ db_path = "~/.local/share/mercury/mercury.db"
 # Per-run overrides (no need to edit the config file)
 ./mercury_agent/mercury_agent ask "ping" \
     --provider=vllm --model=qwen2.5-7b-instruct --temperature=0.1
+
+# Run as a Discord bot (set DISCORD_BOT_TOKEN first)
+export DISCORD_BOT_TOKEN="your_token_here"
+./mercury_agent/mercury_agent daemon
 ```
 
 ## CLI usage
@@ -135,6 +152,7 @@ Subcommands:
                           (new turns go to a new session).
   history                 List most recently updated sessions.
   search <query>          FTS5 search across stored messages.
+  daemon                  Start the Discord bot daemon (blocking).
 
 Common options (chat / ask / session):
   --model=<name>          Override model name for the active provider.
@@ -166,6 +184,10 @@ the full list.
 | `temperature`         | `MERCURY_TEMPERATURE`         | `0.3`                                        | Sampling temperature in `[0, 2]`.                |
 | `max_loop_iterations` | `MERCURY_MAX_LOOP_ITERATIONS` | `10`                                         | Hard cap on ReAct iterations per query.          |
 | `db_path`             | `MERCURY_DB_PATH`             | `~/.local/share/mercury/mercury.db`          | SQLite database path. `~` expands to `$HOME`.    |
+| `discord.token_env`   | `DISCORD_BOT_TOKEN`           | `DISCORD_BOT_TOKEN`                          | Env var holding the Discord bot token.          |
+| `discord.prefix`      | `DISCORD_PREFIX`              | `!`                                          | Command prefix for bot commands.                |
+| `discord.admins.allow`| (TOML only)                   | `[]`                                         | Discord user IDs with admin privileges.         |
+| `discord.file_rules`  | (TOML only)                   | see `mercury_core/DISCORD.md`                | File access allow/deny patterns.                |
 | (n/a)                 | `OPENROUTER_API_KEY`          | (empty)                                      | API key sent as `Authorization: Bearer ...`.     |
 
 `.env` is also read (in `loadConfig`) for `OPENROUTER_API_KEY`,
@@ -184,13 +206,31 @@ want to export those variables globally.
 | `memory.nim`        | SQLite + FTS5: sessions, messages, full-text search, token-usage aggregation.   |
 | `token_counter.nim` | Cheap heuristic token counter used to size requests.                            |
 
+### `mercury_core/` — Discord & Agent Infrastructure
+
+| Module                  | Responsibility                                                              |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `discord.nim`           | DI-based Discord bot: `DiscordBot` ref object with injected API callbacks.  |
+| `discord_bridge.nim`    | `RealDiscordApi` — wraps dimscord REST API (send, typing, threads).         |
+| `discord_commands.nim`  | Command parser + handlers for `!status`, `!config`, `!admin`, `!session`.   |
+| `discord_types.nim`     | Shared types (`DiscordConfig`, `DiscordUser`, `FileRules`).                  |
+| `discord_mocks.nim`     | `MockDiscordApi`, `MockShard` — full offline Discord simulation for tests.  |
+| `agent_dispatcher.nim`  | Async agent request queue: accepts messages, dispatches to agent loop,      |
+|                         | returns result via callback.                                                |
+| `permission.nim`        | Permission evaluator: user allow/deny lists, tool risk levels, path checks. |
+| `file_path_validator.nim`| Path traversal protection, canonicalization, deny-list matching.            |
+| `file_tool.nim`         | `fileReadTool` / `fileWriteTool` with pattern-based allow/deny.             |
+| `message_chunker.nim`   | Splits long messages at the Discord 2000-char limit.                        |
+| `rate_limit.nim`        | Per-user token-bucket rate limiter.                                         |
+| `thread_mapping.nim`    | Persistent Discord channel→thread mapping backed by SQLite.                 |
+
 ### `mercury_agent/`
 
 | Module                  | Responsibility                                                              |
 | ----------------------- | --------------------------------------------------------------------------- |
 | `agent_loop.nim`        | ReAct loop: build system+user, call LLM, dispatch tool calls, log to memory.|
 | `tools/shell.nim`       | Shell tool with deny-list and per-call timeout.                             |
-| `mercury_agent.nim`     | CLI wiring + subcommand entry points (`chat`, `ask`, `session`, …).         |
+| `mercury_agent.nim`     | CLI wiring + subcommand entry points (`chat`, `ask`, `session`, `daemon`).  |
 
 The agent loop's contract is simple:
 
@@ -217,6 +257,10 @@ make build           # build both packages
 make test            # run all tests (mercury_core + mercury_agent)
 ```
 
+> **Note**: The full build (including the Discord daemon) now works on
+> Nim 2.2.10. Both packages pass `--define:ssl` via `config.nims` to handle
+> the `raiseSSLError` compatibility issue introduced in Nim 2.2.x.
+
 Equivalent commands:
 
 ```bash
@@ -238,6 +282,10 @@ The test suite is split into focused modules:
   - `ttoken_counter.nim` — heuristic counter sanity checks.
   - `mock_server.nim` — `MockLLMServer`, an in-process HTTP mock used by
     integration tests.
+  - `test_*.nim` — 11 Discord/security test files (permission, file_tool,
+    rate_limit, thread_mapping, message_chunker, agent_dispatcher,
+    discord_bot, discord_commands, discord_mocks, discord_config,
+    e2e_discord, and reconnection).
 
 - `mercury_agent/tests/`
   - `tagent_loop.nim` — ReAct loop driven against the mock server: text
@@ -246,6 +294,8 @@ The test suite is split into focused modules:
   - `tcli.nim` — config-override layering, recent-session listing,
     `cmdHistory`/`cmdSearch`/`cmdAsk`/`cmdSession` argument validation,
     binary `--help` smoke test.
+  - `test_shell_tool.nim` — deny-list matching, command execution,
+    timeout handling, tool registry integration.
   - **`tintegration.nim`** — full end-to-end stack: `loadConfig` →
     `LLMClient` → `ToolRegistry` (with the real `shellTool`) →
     SQLite-backed `Memory` → `runAgentLoop`. Covers:
@@ -291,6 +341,25 @@ make desloppify
 
 The target runs `python3 -m desloppify scan --path .` on demand.
 `.desloppify/` is ignored so local scan output does not pollute the repo.
+
+## Development Status
+
+Mercury is currently **Phase 1 (Foundation) + Phase 2 (Discord) — both
+complete**. See `STATUS.md` for the full status breakdown.
+
+### Roadmap
+
+| Phase | What | Status |
+|-------|------|--------|
+| 1.1–1.4 | Core library (config, LLM, tokens, memory) | ✅ Complete |
+| 2.1–2.3 | Agent core (tools, ReAct loop, mocks) | ✅ Complete |
+| 3.1–3.3 | CLI, integration, end-to-end tests | ✅ Complete |
+| Phase 2 | Discord bot with permissions, threads, file tools | ✅ Complete |
+| P0 | CI pipeline (GitHub Actions) | 🔜 Planned |
+| P0 | Deep code audit (40+ source files, 312 tests) | ✅ Complete |
+| P1 | `mercury_code` — autonomous coding harness | 🔜 Planned |
+| P2 | MCP support for external tool discovery | 🔜 Planned |
+| P2 | Sub-agent delegation for parallel work | 🔜 Planned |
 
 ## License
 

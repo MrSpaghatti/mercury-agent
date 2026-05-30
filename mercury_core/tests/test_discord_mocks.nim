@@ -1,14 +1,14 @@
-import std/[options, unittest]
+import std/[asyncdispatch, options, unittest]
 import mercury_core/discord_mocks
 
 suite "Discord mocks":
   test "records discord api calls in order":
     let api = newMockDiscordApi()
 
-    let messageId = api.sendMessage("channel-1", "hello")
-    let threadId = api.createThread("channel-1", messageId, "thread-name")
-    api.triggerTyping("channel-1")
-    api.archiveThread(threadId)
+    let messageId = waitFor api.sendMessage("channel-1", "hello")
+    let threadId = waitFor api.createThread("channel-1", messageId, "thread-name")
+    waitFor api.triggerTyping("channel-1")
+    waitFor api.archiveThread(threadId)
 
     check messageId == "msg_1"
     check threadId == "thread_1"

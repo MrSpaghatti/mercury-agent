@@ -7,7 +7,6 @@ nimcache/
 *.dylib
 *.pdb
 *.stackdump
-*.nims
 mercury_core/mercury_core
 mercury_agent/mercury_agent
 mercury_code/mercury_code
@@ -31,3 +30,17 @@ mercury_core/tests/test_mock_server
 mercury_agent/tests/tagent_loop
 mercury_agent/tests/tcli
 mercury_agent/tests/tintegration
+mercury_agent/tests/test_shell_tool
+mercury_core/tests/test_agent_dispatcher
+mercury_core/tests/test_discord_bot
+mercury_core/tests/test_discord_commands
+mercury_core/tests/test_discord_config
+mercury_core/tests/test_discord_mocks
+mercury_core/tests/test_e2e_discord
+mercury_core/tests/test_file_path_validator
+mercury_core/tests/test_file_tool
+mercury_core/tests/test_message_chunker
+mercury_core/tests/test_permission
+mercury_core/tests/test_rate_limit
+mercury_core/tests/test_thread_mapping
+mercury_core/tests/test_thread_reconnection

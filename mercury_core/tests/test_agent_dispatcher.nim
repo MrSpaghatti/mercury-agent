@@ -1,11 +1,11 @@
-import unittest, asyncdispatch, options
+import unittest, asyncdispatch, options, strutils
 import mercury_core/agent_dispatcher
 import mercury_core/discord_types
 
 suite "Agent Dispatcher":
   test "creates dispatcher with callback":
     var receivedResult: AgentResult
-    let cb = proc(result: AgentResult) {.gcsafe.} =
+    let cb = proc(result: AgentResult) =
       receivedResult = result
 
     let dispatcher = newAgentDispatcher(cb)
@@ -13,7 +13,7 @@ suite "Agent Dispatcher":
 
   test "dispatchAgent returns result via callback":
     var receivedResult: AgentResult
-    let cb = proc(result: AgentResult) {.gcsafe.} =
+    let cb = proc(result: AgentResult) =
       receivedResult = result
 
     let dispatcher = newAgentDispatcher(cb)

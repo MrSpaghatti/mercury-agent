@@ -1,4 +1,4 @@
-import std/[unittest, options]
+import std/[asyncdispatch, strutils, unittest, options]
 import db_connector/db_sqlite
 import mercury_core/discord
 import mercury_core/discord_mocks
@@ -16,7 +16,7 @@ proc makeConfig(): DiscordConfig =
   result.users.allow = @["user1"]
 
 proc makeDispatcher(): AgentDispatcher =
-  newAgentDispatcher(proc(r: AgentResult) {.gcsafe.} = discard)
+  newAgentDispatcher(proc(r: AgentResult) = discard)
 
 suite "thread reconnection":
   test "mention in channel with archived thread creates new thread and reuses old session":

@@ -1,4 +1,5 @@
-import os, strutils, nre, uri
+import os, strutils, uri
+import std/re
 
 type
   PathDecision* = enum
@@ -54,8 +55,8 @@ proc matchPattern(path: string, pattern: string): bool =
     var rePattern = pattern.replace(".", "\\.").replace("*", ".*").replace("?", ".")
     rePattern = "^" & rePattern & "$"
     let r = re(rePattern)
-    return path.match(r).isSome
-  except:
+    return path.match(r)
+  except RegexError:
     return false
 
 proc matchAnyPattern(path: string, patterns: seq[string]): bool =
@@ -78,7 +79,11 @@ proc validatePath*(path: string, rules: FileRules): ValidationResult =
   
   # 1. URL decoding
   if p.contains("%"):
-    p = decodeUrl(p)
+    try:
+      p = decodeUrl(p)
+    except ValueError:
+      return ValidationResult(decision: pathInvalid, resolvedPath: p,
+                              reason: "Malformed percent-encoding in path")
     
   # 2. Tilde expansion
   if p.startsWith("~"):

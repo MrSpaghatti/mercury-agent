@@ -105,6 +105,12 @@ proc fileWriteTool*(rules: FileRules, cfg: DiscordConfig, userId: string): Tool 
         try:
           moveFile(tempPath, val.resolvedPath)
           return ToolResult(output: "File written successfully", isError: false, exitCode: 0)
+        except CatchableError as e:
+          if fileExists(tempPath):
+            try: removeFile(tempPath) except CatchableError: discard
+          return ToolResult(output: "Error moving file: " & e.msg, isError: true, exitCode: 1)
+        # Nim 2.2.x with -d:ssl may flag moveFile as raising Exception transitively.
+        # Catch as a safety net even though this should never trigger.
         except Exception as e:
           if fileExists(tempPath):
             try: removeFile(tempPath) except CatchableError: discard

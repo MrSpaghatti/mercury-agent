@@ -1,0 +1,2 @@
+--path:"../mercury_core/src"
+--define:ssl

@@ -3,12 +3,12 @@
 PYTHON ?= python3
 
 build:
-	nimble build -p:mercury_core
-	nimble build -p:mercury_agent
+	cd mercury_core && nimble build -y
+	cd mercury_agent && nimble build -y
 
 test:
-	nimble test -p:mercury_core
-	nimble test -p:mercury_agent
+	cd mercury_core && nimble test -y 2>&1
+	cd mercury_agent && nimble test -y 2>&1
 
 lint: desloppify
 

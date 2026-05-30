@@ -96,3 +96,65 @@ nim c -r tests/test_e2e_discord.nim
 ```
 
 The E2E test uses `MockDiscordApi` and `MockShard` to completely simulate Discord's HTTP and Gateway interfaces, allowing full coverage of session routing, thread creation, permission checks, and file tools without making real network requests.
+
+### Test Suite
+
+All Discord-related tests live in `mercury_core/tests/`:
+
+| Test file | Tests | What it covers |
+|-----------|-------|----------------|
+| `test_discord_mocks.nim` | Mock API and shard | Verifies mock objects correctly simulate Discord behavior |
+| `test_discord_commands.nim` | Command handlers | `!status`, `!config`, `!admin`, `!session` parsing + execution |
+| `test_discord_bot.nim` | Bot integration | `onMessageCreate` routing, DI wiring, permission checks |
+| `test_discord_config.nim` | Discord config parsing | TOML → DiscordConfig, env var overrides, validation |
+| `test_e2e_discord.nim` | End-to-end flow | Full session: message → permission → agent dispatch → response |
+| `test_file_tool.nim` | File read/write tools | Path validation, traversal protection, allow/deny patterns |
+| `test_file_path_validator.nim` | Path safety | Canonicalization, percent-decode, deny-list matching |
+| `test_message_chunker.nim` | Message splitting | 2000-char Discord limit handling, boundary splits |
+| `test_permission.nim` | Permission evaluation | User allow/deny, tool risk levels, admin checks |
+| `test_rate_limit.nim` | Token-bucket rate limiter | Per-user limits, burst handling |
+| `test_thread_mapping.nim` | Thread persistence | SQLite-backed channel→thread mapping |
+
+### Architecture
+
+```
+Discord Gateway ──▶ dimscord ──▶ onMessageCreate(event)
+                                    │
+                                    ▼
+                            discord_commands.nim
+                              (parse prefix + command)
+                                    │
+                          ┌─────────┴──────────┐
+                          ▼                     ▼
+                    Admin command         Agent message
+                    (!config, !admin)      (mention / DM)
+                          │                     │
+                          ▼                     ▼
+                    Execute handler     agent_dispatcher.nim
+                                          (async queue)
+                                                │
+                                                ▼
+                                          agent_loop.nim
+                                          (ReAct loop)
+                                                │
+                                                ▼
+                                          sendFn callback
+                                          (chunkMessage → reply)
+```
+
+### Module Reference
+
+| Module | Location | Purpose |
+|--------|----------|---------|
+| `discord.nim` | `mercury_core/discord.nim` | `DiscordBot` ref object with DI callbacks, `onMessageCreate` handler |
+| `discord_bridge.nim` | `mercury_core/discord_bridge.nim` | `RealDiscordApi` — wraps dimscord REST API |
+| `discord_commands.nim` | `mercury_core/discord_commands.nim` | Command parsing + handler dispatch |
+| `discord_types.nim` | `mercury_core/discord_types.nim` | `DiscordConfig`, `DiscordUser`, `FileRules` types |
+| `discord_mocks.nim` | `mercury_core/discord_mocks.nim` | `MockDiscordApi`, `MockShard` for offline testing |
+| `agent_dispatcher.nim` | `mercury_core/agent_dispatcher.nim` | `AgentDispatcher` — async agent request queue with callback |
+| `permission.nim` | `mercury_core/permission.nim` | `PermissionEvaluator` — user/tool/path permission model |
+| `file_path_validator.nim` | `mercury_core/file_path_validator.nim` | Path canonicalization + security validation |
+| `file_tool.nim` | `mercury_core/file_tool.nim` | `fileReadTool`, `fileWriteTool` — sandboxed file operations |
+| `message_chunker.nim` | `mercury_core/message_chunker.nim` | Splits messages at 2000-char Discord limit |
+| `rate_limit.nim` | `mercury_core/rate_limit.nim` | Per-user token-bucket rate limiter |
+| `thread_mapping.nim` | `mercury_core/thread_mapping.nim` | Persistent channel↔thread mapping with SQLite |
