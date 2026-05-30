@@ -98,7 +98,7 @@ proc jsonRpcRequest*(mcpMethod: string; params: JsonNode = nil): JsonNode =
   else:
     result["params"] = newJObject()
 
-proc jsonRpcResponseId(node: JsonNode): int =
+proc jsonRpcResponseId*(node: JsonNode): int =
   if node.hasKey("id"):
     result = node["id"].getInt()
   else:

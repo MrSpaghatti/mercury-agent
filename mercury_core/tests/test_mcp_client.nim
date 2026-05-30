@@ -19,7 +19,7 @@ proc validInitializeResponse(): string =
   """{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{"name":"test-mcp","version":"1.0.0"}}}"""
 
 proc validToolsListResponse(tools: JsonNode): string =
-  '{"jsonrpc":"2.0","id":2,"result":{"tools":' & $tools & "}}"
+  "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":" & $tools & "}}"
 
 proc validToolCallResponse(text: string): string =
   """{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":""" & $text & """}]}}"""

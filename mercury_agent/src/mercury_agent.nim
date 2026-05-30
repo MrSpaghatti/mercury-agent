@@ -778,22 +778,22 @@ proc cmdSearch*(
 # adapter via closure.
 
 proc makeSendFn(api: RealDiscordApi): SendMessageFn =
-  proc send(channelId, content: string): Future[string] {.async.} =
+  proc send(channelId, content: string): Future[string] {.async, gcsafe.} =
     return await api.sendMessage(channelId, content)
   return send
 
 proc makeTypingFn(api: RealDiscordApi): TriggerTypingFn =
-  proc typing(channelId: string) {.async.} =
+  proc typing(channelId: string) {.async, gcsafe.} =
     await api.triggerTyping(channelId)
   return typing
 
 proc makeCreateThreadFn(api: RealDiscordApi): CreateThreadFn =
-  proc create(channelId, messageId, name: string): Future[string] {.async.} =
+  proc create(channelId, messageId, name: string): Future[string] {.async, gcsafe.} =
     return await api.createThread(channelId, messageId, name)
   return create
 
 proc makeArchiveThreadFn(api: RealDiscordApi): ArchiveThreadFn =
-  proc archive(threadId: string) {.async.} =
+  proc archive(threadId: string) {.async, gcsafe.} =
     await api.archiveThread(threadId)
   return archive
 

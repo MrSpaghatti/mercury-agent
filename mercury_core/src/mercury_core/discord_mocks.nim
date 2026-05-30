@@ -66,7 +66,7 @@ proc createThread*(api: MockDiscordApi; channelId, messageId, name: string): Fut
 proc triggerTyping*(api: MockDiscordApi; channelId: string) {.async.} =
   api.calls.add MockApiCall(kind: mockTriggerTyping, channelId: channelId)
 
-proc archiveThread*(api: MockDiscordApi; threadId: string) {.async.} =
+proc archiveThread*(api: MockDiscordApi; threadId: string) {.async, gcsafe.} =
   api.calls.add MockApiCall(kind: mockArchiveThread, threadId: threadId)
 
 proc newMockShard*(userId: string; guildMembers: seq[string] = @[]): MockShard =
@@ -98,26 +98,22 @@ proc makeMessage*(authorId, content, channelId: string; guildId: Option[string];
   for userId in mentionUsers:
     result.mention_users.add MockUser(id: userId, username: userId, bot: false)
 
-proc mockSendFn*(api: MockDiscordApi): proc (channelId, content: string): Future[string] {.async.} =
-  ## Returns a sendMessage callback that delegates to the mock API.
-  proc send(channelId, content: string): Future[string] {.async.} =
+proc mockSendFn*(api: MockDiscordApi): proc (channelId, content: string): Future[string] {.async, gcsafe.} =
+  proc send(channelId, content: string): Future[string] {.async, gcsafe.} =
     return await api.sendMessage(channelId, content)
   return send
 
-proc mockTypingFn*(api: MockDiscordApi): proc (channelId: string) {.async.} =
-  ## Returns a triggerTyping callback that delegates to the mock API.
-  proc typing(channelId: string) {.async.} =
+proc mockTypingFn*(api: MockDiscordApi): proc (channelId: string) {.async, gcsafe.} =
+  proc typing(channelId: string) {.async, gcsafe.} =
     await api.triggerTyping(channelId)
   return typing
 
-proc mockCreateThreadFn*(api: MockDiscordApi): proc (channelId, messageId, name: string): Future[string] {.async.} =
-  ## Returns a createThread callback that delegates to the mock API.
-  proc create(channelId, messageId, name: string): Future[string] {.async.} =
+proc mockCreateThreadFn*(api: MockDiscordApi): proc (channelId, messageId, name: string): Future[string] {.async, gcsafe.} =
+  proc create(channelId, messageId, name: string): Future[string] {.async, gcsafe.} =
     return await api.createThread(channelId, messageId, name)
   return create
 
-proc mockArchiveThreadFn*(api: MockDiscordApi): proc (threadId: string) {.async.} =
-  ## Returns an archiveThread callback that delegates to the mock API.
-  proc archive(threadId: string) {.async.} =
+proc mockArchiveThreadFn*(api: MockDiscordApi): proc (threadId: string) {.async, gcsafe.} =
+  proc archive(threadId: string) {.async, gcsafe.} =
     await api.archiveThread(threadId)
   return archive

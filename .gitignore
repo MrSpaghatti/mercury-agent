@@ -53,9 +53,3 @@ mercury_core/src/mercury_core/persona
 mercury_core/src/mercury_core/tool_registry
 mercury_agent/src/agent_loop
 mercury_agent/src/tools/shell
-.opencode/
-mercury_core/src/mercury_core/delegate
-mercury_core/src/mercury_core/persona
-mercury_core/src/mercury_core/tool_registry
-mercury_agent/src/agent_loop
-mercury_agent/src/tools/shell

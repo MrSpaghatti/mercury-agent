@@ -3,7 +3,7 @@
 ## Uses a tiny in-process TCP mock server (one connection at a time, sync)
 ## to exercise the LLM client without depending on Task 2.3's mock server.
 
-import std/[json, net, os, strutils, tables, unittest, locks]
+import std/[json, net, os, strutils, tables, unittest, locks, threadpool]
 import mercury_core/llm_client
 
 # ---------------------------------------------------------------------------

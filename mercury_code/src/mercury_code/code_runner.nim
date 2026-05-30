@@ -199,7 +199,7 @@ proc parseNimErrors*(raw: string; defaultFile: string): seq[CompileError] =
       lineNum = parseInt(parts[0].strip())
       if parts.len > 1:
         colNum = parseInt(parts[1].strip())
-    except ValueError:
+    except CatchableError:
       continue
 
     # Extract severity and message after the closing paren

@@ -106,21 +106,23 @@ type
   McpServerEntry* = object
     ## Temporary storage for a single [mcp_servers.name] block during TOML
     ## parsing. Fields that are not set in the TOML remain as empty/zero
-    ## defaults and are filled in by `newMcpServerConfig()` at the end.
+    ## defaults and are filled in by `parseMcpServerEntry()` at the end.
     name*: string
     url*: string
     authToken*: string
     timeoutMs*: int
-    enabled*: bool
+    enabledExplicit*: bool  ## true if "enabled" was explicitly set in TOML/env
+    enabled*: bool          ## the value (true unless explicitly set to false)
 
 proc parseMcpServerEntry(entry: McpServerEntry): McpServerConfig =
   ## Converts a parsed `McpServerEntry` into a `McpServerConfig`, filling in
   ## any missing values with defaults. Strips trailing slashes from URL.
   result = McpServerConfig(
-    url: entry.url.strip(trailing = true, chars = {'/'}),
+    url: if entry.url.len > 0: entry.url.strip(trailing = true, chars = {'/'})
+         else: "http://localhost:8080/mcp",
     authToken: entry.authToken,
     timeoutMs: if entry.timeoutMs > 0: entry.timeoutMs else: DefaultMcpTimeoutMs,
-    enabled: entry.enabled,
+    enabled: if entry.enabledExplicit: entry.enabled else: true,
   )
 
 proc applyEnvMcpServers*(cfg: var MercuryConfig) =
@@ -156,6 +158,7 @@ proc applyEnvMcpServers*(cfg: var MercuryConfig) =
     let enabledStr = getEnv(enabledEnv)
     if enabledStr.len > 0:
       entry.enabled = enabledStr.toLowerAscii() in @["1", "true", "yes", "on"]
+      entry.enabledExplicit = true
     cfg.mcpServers.add(parseMcpServerEntry(entry))
     inc i
 
@@ -237,7 +240,7 @@ proc loadTomlFile(cfg: var MercuryConfig; path: string) =
       break
     of cfgSectionStart:
       # New section — flush any pending MCP server entry first.
-      if currentMcpServer.len > 0 and mcpBuf.url.len > 0:
+      if currentMcpServer.len > 0 and mcpBuf.name.len > 0:
         mcpEntries.add(mcpBuf)
 
       currentSection = event.section
@@ -262,6 +265,7 @@ proc loadTomlFile(cfg: var MercuryConfig; path: string) =
               "Invalid timeout_ms in " & path & ": " & event.value)
         of "enabled":
           mcpBuf.enabled = event.value.toLowerAscii() in @["1", "true", "yes", "on"]
+          mcpBuf.enabledExplicit = true
         else: discard
       else:
         try:
@@ -276,7 +280,7 @@ proc loadTomlFile(cfg: var MercuryConfig; path: string) =
         "Parse error in " & path & ": " & event.msg)
 
   # Flush any remaining MCP server entry.
-  if currentMcpServer.len > 0 and mcpBuf.url.len > 0:
+  if currentMcpServer.len > 0 and mcpBuf.name.len > 0:
     mcpEntries.add(mcpBuf)
 
   # Apply all collected MCP server entries.

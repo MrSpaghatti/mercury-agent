@@ -18,10 +18,10 @@ import discord_bridge
 import thread_mapping
 
 type
-  SendMessageFn* = proc (channelId, content: string): Future[string] {.async.}
-  TriggerTypingFn* = proc (channelId: string) {.async.}
-  CreateThreadFn* = proc (channelId, messageId, name: string): Future[string] {.async.}
-  ArchiveThreadFn* = proc (threadId: string) {.async.}
+  SendMessageFn* = proc (channelId, content: string): Future[string] {.async, gcsafe.}
+  TriggerTypingFn* = proc (channelId: string) {.async, gcsafe.}
+  CreateThreadFn* = proc (channelId, messageId, name: string): Future[string] {.async, gcsafe.}
+  ArchiveThreadFn* = proc (threadId: string) {.async, gcsafe.}
 
   DiscordBot* = ref object
     sendMessage*: SendMessageFn
@@ -57,7 +57,7 @@ proc generateSessionId(): string =
   let t = now().utc
   return "sess_" & t.format("yyyyMMdd'T'HHmmss") & "_" & $getTime().nanosecond
 
-proc onMessageCreate*(bot: DiscordBot; msg: discord_mocks.Message) {.async.} =
+proc onMessageCreate*(bot: DiscordBot; msg: discord_mocks.Message) {.async, gcsafe.} =
   ## Main message handler. Routes messages to commands or agent dispatch.
   ##
   ## 1. Ignore bot authors.
@@ -172,12 +172,12 @@ proc startDiscordBot*(
   var l = newConsoleLogger(fmtStr = "[$datetime] - $msg ", useStderr = true)
   addHandler(l)
 
-  discord.events.on_ready = proc (s: Shard, r: Ready) {.async.} =
+  discord.events.on_ready = proc (s: Shard, r: Ready) {.async, gcsafe.} =
     bot.shard.userId = r.user.id
     bot.shard.user = MockUser(id: r.user.id, username: r.user.username, bot: true)
     notice("[daemon] Connected as " & r.user.username & " (" & r.user.id & ")")
 
-  discord.events.message_create = proc (s: Shard, m: dimscord.Message) {.async.} =
+  discord.events.message_create = proc (s: Shard, m: dimscord.Message) {.async, gcsafe.} =
     let internalMsg = convertMessage(m)
     await onMessageCreate(bot, internalMsg)
 

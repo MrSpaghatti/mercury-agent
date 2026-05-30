@@ -19,7 +19,7 @@ type
     error*: Option[string]
     channelId*: string
 
-  AgentCallback* = proc(result: AgentResult)
+  AgentCallback* = proc(result: AgentResult) {.gcsafe, raises: [].}
 
   AgentDispatcher* = ref object
     callback*: AgentCallback
@@ -27,9 +27,10 @@ type
 proc newAgentDispatcher*(callback: AgentCallback): AgentDispatcher =
   ## Creates a new agent dispatcher with the given callback.
   ## The callback is invoked when agent processing completes.
+  ## Requires gcsafe callback for Nim 2.2.x async GC-safety.
   AgentDispatcher(callback: callback)
 
-proc dispatchAgent*(dispatcher: AgentDispatcher, request: AgentRequest) {.async.} =
+proc dispatchAgent*(dispatcher: AgentDispatcher, request: AgentRequest) {.async, gcsafe.} =
   ## Dispatches an agent request. Currently a placeholder that simulates
   ## async processing. The actual agent integration will be wired in Task 4.16.
   ##

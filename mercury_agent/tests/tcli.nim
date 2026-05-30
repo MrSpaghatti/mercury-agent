@@ -17,7 +17,6 @@ import std/[os, osproc, strutils, times, unittest]
 import mercury_core/config
 import mercury_core/llm_client
 import mercury_core/memory
-
 import mercury_agent
 
 # ---------------------------------------------------------------------------
