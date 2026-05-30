@@ -6,17 +6,14 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  NIMBLE_DIR: ~/.nimble
-
 jobs:
   build-and-test:
     strategy:
       fail-fast: false
       matrix:
         nim-version:
-          - "2.0.8"
-          - "2.2.2"
+          - "2.0.x"
+          - "2.2.x"
 
     runs-on: ubuntu-latest
 
@@ -30,9 +27,10 @@ jobs:
           sudo apt-get install -y -qq libsqlite3-dev
 
       - name: Setup Nim ${{ matrix.nim-version }}
-        uses: nim-works/setup-nim@v1
+        uses: jiro4989/setup-nim-action@v2
         with:
           nim-version: ${{ matrix.nim-version }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache nimble packages
         uses: actions/cache@v4
