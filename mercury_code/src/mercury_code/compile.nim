@@ -82,7 +82,7 @@ proc runCompile*(
   except CatchableError:
     discard
 
-  let rawOutput = try: readAll(p.outputStream) except: ""
+  let rawOutput = try: readAll(p.outputStream) except CatchableError: ""
   try: p.close() except CatchableError: discard
 
   let durationMs = int((getMonoTime() - startMono).inMilliseconds)

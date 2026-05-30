@@ -136,7 +136,10 @@ proc resolveDbPath*(cfg: MercuryConfig): string =
     result = expandTilde(result)
   let parent = parentDir(result)
   if parent.len > 0 and not dirExists(parent):
-    try: createDir(parent) except CatchableError: discard
+    try:
+      createDir(parent)
+    except CatchableError:
+      stderr.writeLine("Warning: could not create parent directory for '" & result & "'.")
 
 proc openMemory*(cfg: MercuryConfig): Memory =
   ## Opens the memory store at the path configured in `cfg`.

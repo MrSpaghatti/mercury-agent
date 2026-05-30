@@ -3,7 +3,7 @@ author        = "Mercury"
 description   = "Mercury coding harness — autonomous coding assistant"
 license       = "MIT"
 srcDir        = "src"
-bin           = @["src/mercury_code/mercury_code"]
+bin           = @["mercury_code"]
 requires      "nim >= 2.0.0"
 requires      "mercury_core >= 0.1.0"
 switch("path", "src")
