@@ -12,6 +12,7 @@ task test, "Run all tests":
   exec "nim c -r tests/tconfig.nim"
   exec "nim c -r tests/ttoken_counter.nim"
   exec "nim c -r tests/tmemory.nim"
+  exec "nim c -r tests/tllm_client.nim"
   exec "nim c -r tests/ttool_registry.nim"
   exec "nim c -r tests/test_message_chunker.nim"
   exec "nim c -r tests/test_discord_mocks.nim"

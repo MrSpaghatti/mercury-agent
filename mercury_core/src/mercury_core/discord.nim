@@ -9,7 +9,7 @@
 ## are injected as callback procs so that both MockDiscordApi and RealDiscordApi
 ## can be used without generics — avoiding Nim's {.async.} + generics limitation.
 
-import std/[asyncdispatch, options, strutils, times]
+import std/[asyncdispatch, logging, options, strutils, times]
 import db_connector/db_sqlite
 import discord_mocks, discord_types, permission, discord_commands,
        agent_dispatcher, message_chunker
@@ -169,10 +169,13 @@ proc startDiscordBot*(
   ## The caller must create the ``DiscordClient`` and ``DiscordBot`` before
   ## calling this proc.  Returns when the session ends or an error occurs.
 
+  var l = newConsoleLogger(fmtStr = "[$datetime] - $msg ", useStderr = true)
+  addHandler(l)
+
   discord.events.on_ready = proc (s: Shard, r: Ready) {.async.} =
     bot.shard.userId = r.user.id
     bot.shard.user = MockUser(id: r.user.id, username: r.user.username, bot: true)
-    stderr.writeLine "[daemon] Connected as " & r.user.username & " (" & r.user.id & ")"
+    notice("[daemon] Connected as " & r.user.username & " (" & r.user.id & ")")
 
   discord.events.message_create = proc (s: Shard, m: dimscord.Message) {.async.} =
     let internalMsg = convertMessage(m)
