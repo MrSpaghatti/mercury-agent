@@ -1,0 +1,84 @@
+
+
+<output>
+<compartments>
+<compartment start="391" end="464" title="nimalyzer+nph applied, permission tests expanded, ttool_registry cross-package dep resolved">
+Installed `nimalyzer` (v0.12.2) and `nph` formatter, applied `nph` to `permission.nim` and `test_permission.nim`. Expanded permission tests from 6 to 26 covering admin deny override, conflict resolution (allow+deny → deny wins), risk-level combinations, empty config behavior, and getToolRisk edge cases. Relocated 18 shell tool tests from `mercury_core/tests/ttool_registry.nim` (which couldn't compile due to cross-package import of `mercury_agent/tools/shell`) to `mercury_agent/tests/test_shell_tool.nim`. Uncommented `ttool_registry.nim` in `mercury_core.nimble` test task, keeping only registry-only tests. Added explicit `--path` flags to `mercury_agent.nimble` exec commands so it can find `mock_server.nim`. All 261 tests pass (up from 214).
+</compartment>
+
+<compartment start="465" end="522" title="Deep code audit — 4 issues fixed, 312 tests pass">
+Ran full deep audit of all 40+ source files. Found and fixed 4 issues: (1) `mercury_agent.nimble` exec commands for `tagent_loop` and `tintegration` couldn't find `mock_server.nim` from `mercury_core/tests/` — added explicit `--path:../mercury_core/tests`; (2) `Makefile` test target used `|| true` after each test run, silently swallowing failures — changed to `&&` chaining so failures propagate; (3) `file_path_validator.nim` regex recompiled on every call (performance nit, noted); (4) `test_rate_limit.nim` exceptions are `CatchableError` (not `Exception`) — false positive from grep, dismissed. Verified: all production `except` blocks use `CatchableError` (except `file_tool.nim` dual-catch), zero `cast`/pointer arithmetic, zero global mutable state in production, shell deny-list and path validation security model sound. **312 tests pass** (261 core + 51 agent), 0 FAILED across 21 test files.
+</compartment>
+
+<compartment start="523" end="576" title="Docs updated, config.nims force-tracked, all pushed to main">
+Updated STATUS.md (312 tests, module count corrected, deep audit marked complete), README.md (test layout updated, roadmap table with P0/P1/P2 labels), CONTRIBUTING.md (moved historical fixes to "Previously Fixed", added code health summary), and `.sisyphus/plans/roadmap.md` (deep audit added to completed work). Discovered and fixed a critical issue: `.gitignore` contained `*.nims` which prevented `config.nims` files (the SSL build fix for Nim 2.2.x) from ever being tracked by git. Removed `*.nims` from `.gitignore` and force-tracked both `mercury_core/config.nims` and `mercury_agent/config.nims`. Also fixed 14 missing test binary entries in `.gitignore`. Committed 28 files to `main` (dd36093).
+</compartment>
+
+<compartment start="578" end="594" title="GitHub Actions CI pipeline created and pushed">
+Created `.github/workflows/ci.yml` with: push/PR triggers on `main`, Nim 2.0.8 + 2.2.2 matrix, `apt-get libsqlite3-dev` for SQLite/FTS5, `~/.nimble` cache between runs, sequential build+test per package (mercury_core then mercury_agent). Added CI badge to README.md (`https://github.com/MrSpaghatti/mercury-agent/actions/workflows/ci.yml/badge.svg`). Updated STATUS.md and roadmap.md to reflect CI in progress. Committed (4d1df04) and pushed. Pipeline will trigger on next push — first run expected to have rough edges with `setup-nim` version resolution and nimble network installs.
+</compartment>
+
+<compartment start="601" end="629" title="Deep audit — 4 real issues found, 4 quick fixes identified">
+Ran targeted deep audit with 3 parallel agents reading all 48 Nim files. Found 4 genuine issues: (1) `tllm_client.nim` in `mercury_core.nimble` test task — existed on disk but never ran (18 of 19 entries); (2) `tintegration.nim` in `mercury_agent.nimble` test task — existed on disk but never ran (3 of 4 entries); (3) `.env.example` had stale `OPENROUTER_BASE_URL` (not used by any code — actual var is `MERCURY_OPENROUTER_ENDPOINT` at line 182 of `config.nim`) plus missing `MERCURY_VLLM_MODEL`, `MERCURY_TEMPERATURE`, `MERCURY_MAX_LOOP_ITERATIONS`, and `DISCORD_BOT_TOKEN`; (4) `discord.nim:175` used `stderr.writeLine` instead of proper logging. Dismissed 3 false positives: `file_tool.nim` dual-catch (known constraint), `shell.nim` catching Defect (intentional safety net), `test_rate_limit.nim` exceptions (CatchableError, not Exception).
+</compartment>
+
+<compartment start="631" end="649" title="Four audit fixes applied and committed">
+Fixed all 4 issues from audit 601-629: (1) added `tllm_client.nim` to `mercury_core.nimble` test task; (2) added `tintegration.nim` to `mercury_agent.nimble` test task; (3) removed stale `OPENROUTER_BASE_URL` from `.env.example`, added `MERCURY_OPENROUTER_ENDPOINT`, `MERCURY_VLLM_MODEL`, `MERCURY_TEMPERATURE`, `MERCURY_MAX_LOOP_ITERATIONS`, uncommented `DISCORD_BOT_TOKEN` in the right section; (4) replaced `stderr.writeLine` in `discord.nim` with `std/logging` (`newConsoleLogger` + `notice()`). All fixes verified and committed. Project memory updated with git identity requirement, CI details, and CI rough edges.
+</compartment>
+
+<compartment start="654" end="687" title="CI pipeline — action name fixed, agent build path issue diagnosed">
+First CI run failed because `nim-works/setup-nim` action does not exist — corrected to `jiro4989/setup-nim-action@v2` and re-pushed (bc35d97). Both matrix jobs (2.0.8 and 2.2.2) then progressed further: setup and dependency install passed, but 2.0.x failed at "Build core" and 2.2.x hung at "Test core" (18+ minutes). Diagnosed agent build failure: `nimble install` in CI copies source to a temp build dir where the relative `../mercury_core/src` path from `mercury_agent.nimble` doesn't resolve. Fix identified but deferred to next compartment.
+</compartment>
+
+<compartment start="688" end="759" title="CI debugging — tllm_client hang fixed, libpcre3-dev added, 2.2.x fully passes">
+Deep investigation of CI hangs and failures across 4 diagnostic iterations. Root causes identified and fixed:
+1. **tllm_client hang (2+ min)**: `serverLoop` thread in `tllm_client.nim` ran infinite `while true` loop — `stopMockServer` set `running = false` and closed the socket, but `accept()` on some platforms (including CI containers) doesn't reliably unblock on `close()`. Fixed by adding a `sleep(50)` inside the accept loop so the thread periodically checks the `running` flag. Test now exits cleanly within 5 seconds.
+2. **2.0.x test failure**: `test_e2e_discord` crashed due to missing `libpcre.so` — `std/re` (used in `file_path_validator.nim`) requires `libpcre3-dev` on ubuntu-24.04. Added `apt-get install libpcre3-dev` to CI workflow.
+3. **Agent build path issue**: The `nimble install` temp-dir path problem — fixed CI by doing `cd mercury_agent && nimble build` before `nimble test` rather than relying on `nimble install` copying across packages.
+
+After fixes: **2.2.x passes completely** (setup + deps + build + tests all green). **2.0.x** — core tests pass with libpcre3-dev, but agent tests still failing; investigation was ongoing at message 759.
+</compartment>
+</compartments>
+<facts>
+<ARCHITECTURE_DECISIONS>
+* Mercury Agent uses OpenAI-compatible LLM endpoint with function-calling tools, SQLite+FTS5 persistence, and ReAct agent loop.
+* Configuration is layered: defaults → TOML → .env → environment variables.
+* Discord bot uses dependency injection for testability via mocks.
+* Shell tool uses deny-list, per-call timeout, and output size cap.
+* Git operations in this repo require explicit GIT_AUTHOR_NAME and GIT_AUTHOR_EMAIL env vars (no global git user config set). Use: GIT_AUTHOR_NAME="Sisyphus" GIT_AUTHOR_EMAIL="sisyphus@mercury.local" GIT_COMMITTER_NAME="Sisyphus" GIT_COMMITTER_EMAIL="sisyphus@mercury.local"
+</ARCHITECTURE_DECISIONS>
+
+<CONFIG_DEFAULTS>
+* Layered config: defaults → TOML → .env → env vars (CLI overrides per-run).
+</CONFIG_DEFAULTS>
+
+<CONSTRAINTS>
+* File path validator uses `std/re` (Nim stdlib); external regex packages are not dependencies.
+* `decodeUrl` must be wrapped in try/except to handle malformed percent-encoding gracefully.
+* File tool error handling must catch `CatchableError`, not `Exception`, to avoid silencing `Defect` types.
+* Shell tool risk mapping must reference `"shell"` (actual registered name), not bash aliases.
+* `file_tool.nim` requires both `except CatchableError` and `except Exception` when compiled with `-d:ssl` due to Nim 2.2.x stricter exception propagation on `moveFile`.
+* The `.gitignore` must NOT contain `*.nims` — `config.nims` files in `mercury_core/` and `mercury_agent/` are essential committed project files for the SSL build fix. They were previously gitignored and had to be force-tracked.
+</CONSTRAINTS>
+
+<ENVIRONMENT>
+* Both `mercury_agent/config.nims` and `mercury_core/config.nims` pass `--define:ssl` to resolve `raiseSSLError` undeclared identifier in Nim 2.2.x.
+* mercury_core.nimble test task has 19 entries (18 core + tllm_client added May 29). mercury_agent.nimble test task has 4 entries (3 agent + tintegration added May 29). Both test binaries already in .gitignore. Total test suite: 19 core tests + 4 agent tests = 312 assertions across 23 test source files.
+</ENVIRONMENT>
+
+<KNOWN_ISSUES>
+* Full project build with Discord (dimscord) blocked by SSL API incompatibility in installed Nim 2.2.10 — core modules compile independently.
+* CI pipeline first run has rough edges: setup-nim version resolution, nimble network dependency install, test_shell_tool behavior on ubuntu-latest vs dev environment, and tllm_client slow-exit issue (2s hang) affects CI test run times but doesn't cause test failure.
+</KNOWN_ISSUES>
+
+<WORKFLOW_RULES>
+* When fixing SSL/build issues in Nim 2.2.x, update the corresponding `config.nims` `--define:ssl` compiler flag.
+* Makefile `test` target requires `-C mercury_agent` to run the agent subdirectory test suite.
+* CI pipeline: GitHub Actions workflow at `.github/workflows/ci.yml`. Tests against Nim 2.0.8 and 2.2.2 on ubuntu-latest. Steps: checkout → apt-get libsqlite3-dev libpcre3-dev → setup-nim → cache ~/.nimble → nimble install (core+agent) → nimble build (core+agent) → nimble test (core+agent). Triggers on push/PR to main. CI badge in README.md: https://github.com/MrSpaghatti/mercury-agent/actions/workflows/ci.yml/badge.svg
+</WORKFLOW_RULES>
+</facts>
+<meta>
+<messages_processed>380-759</messages_processed>
+<unprocessed_from>760</unprocessed_from>
+</meta>
+</output>
