@@ -1,6 +1,6 @@
 # Mercury Agent — Development Status
 
-**Last Updated**: May 29, 2026  
+**Last Updated**: May 30, 2026  
 **Project Path**: `/home/spag/mercury-agent`  
 **Phase**: 1 (Foundation) + Phase 2 (Discord Integration) — Complete
 
@@ -71,7 +71,7 @@ AI agent with:
 | `.gitignore` | ✅ Covers all build artifacts |
 | Architectural review | ✅ `report.md` written |
 | Deep code audit (all 40+ source files) | ✅ 312 tests pass, 0 critical issues found |
-| CI pipeline (GitHub Actions) | 🔄 Workflow written, awaiting first run |
+| CI pipeline (GitHub Actions) | ✅ Passing on Nim 2.0.8 and 2.2.2 |
 
 ---
 
@@ -167,7 +167,7 @@ Empty package reserved for the coding harness (future Phase).
 | mercury_core (Wave 2) | ttool_registry, test_mock_server | 18 | ✅ All pass |
 | mercury_core (Discord) | test_discord_*, test_e2e_discord, test_permission, test_file_*, test_rate_limit, test_thread_*, test_agent_dispatcher, test_message_chunker | 151 | ✅ All pass |
 | mercury_agent | tcli, tagent_loop, tintegration, test_shell_tool | 51 | ✅ All pass |
-| **Total** | **21 test files** | **312** | **✅ 0 FAILED** |
+| **Total** | **23 test files** | **312** | **✅ 0 FAILED** |
 
 ---
 
@@ -176,8 +176,8 @@ Empty package reserved for the coding harness (future Phase).
 See `.sisyphus/plans/roadmap.md` for the detailed project roadmap.
 Near-term candidates (in priority order):
 
-1. **CI pipeline (P0)** — GitHub Actions for automated build + test on
-   push. Green CI badge on every commit.
+1. **~~CI pipeline (P0)~~** ✅ — GitHub Actions running on Nim 2.0.8 and 2.2.2.
+   Green CI badge on every push.
 2. **CHANGELOG.md** — Create release history for v0.1.0.
 3. **mercury_code package (P1)** — Build the autonomous coding harness
    (Phase 3).

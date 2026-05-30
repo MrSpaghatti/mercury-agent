@@ -65,7 +65,7 @@ mercury/
 │   └── tests/          # 20+ test files covering all modules
 ├── mercury_agent/      # CLI binary (mercury_agent.nim,
 │   ├── src/            # agent_loop.nim, tools/shell.nim)
-│   └── tests/          # tagent_loop, tcli, tintegration
+│   └── tests/          # tagent_loop, tcli, tintegration, test_shell_tool
 ├── mercury_code/       # coding harness (placeholder)
 ├── Makefile
 └── README.md           # this file
