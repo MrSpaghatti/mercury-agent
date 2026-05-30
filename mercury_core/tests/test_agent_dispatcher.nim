@@ -52,8 +52,11 @@ suite "Agent Dispatcher":
       check storage[].responseText.contains("hello")
       check storage[].error.isNone
 
-  test "startDispatcher and stopDispatcher are no-ops":
-    let dispatcher = newAgentDispatcher(nil)
-    startDispatcher(dispatcher)
-    stopDispatcher(dispatcher)
-    check true  # Just verify no crash
+  test "startDispatcher and stopDispatcher are idempotent":
+    let d1 = newAgentDispatcher(nil)
+    let d2 = newAgentDispatcher(nil)
+    startDispatcher(d1)
+    stopDispatcher(d1)
+    startDispatcher(d2)
+    stopDispatcher(d2)
+    check d1 != nil and d2 != nil

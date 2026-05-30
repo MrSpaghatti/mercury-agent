@@ -424,10 +424,7 @@ suite "chatCompletion request shape":
   setup:
     resetMock(sharedServer)
 
-  test "sends Authorization header (verified via successful request)":
-    # We can't directly inspect headers from this minimal mock, but we
-    # confirm the client constructs a request that the server accepts and
-    # that body is well-formed JSON.
+  test "request body is well-formed JSON with required keys":
     sharedServer.enqueue("200 OK", SuccessBody)
     let client = makeClient(sharedServer)
     discard client.chatCompletion("ping")

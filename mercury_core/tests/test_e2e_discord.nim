@@ -114,29 +114,25 @@ suite "End-to-end Discord Integration":
     check bot.config.prefix == "?"
     
   test "File tool configuration":
-    # Let's write dummy files
     writeFile("test_allowed.txt", "allowed")
     writeFile(".env_test", "secret")
-    
-    let rules = FileRules(
-      sandboxDir: getCurrentDir(),
-      allowPatterns: @["*"],
-      askPatterns: @[],
-      denyPatterns: @[".env*"]
-    )
-
-    let readTool = fileReadTool(rules)
-
-    let allowedArgs = %*{"path": "test_allowed.txt"}
-    let allowedResult = readTool.execute(allowedArgs)
-    check "allowed" in allowedResult.output
-
-    let deniedArgs = %*{"path": ".env_test"}
-    let deniedResult = readTool.execute(deniedArgs)
-    check "Access denied" in deniedResult.output
-    
-    removeFile("test_allowed.txt")
-    removeFile(".env_test")
+    try:
+      let rules = FileRules(
+        sandboxDir: getCurrentDir(),
+        allowPatterns: @["*"],
+        askPatterns: @[],
+        denyPatterns: @[".env*"]
+      )
+      let readTool = fileReadTool(rules)
+      let allowedArgs = %*{"path": "test_allowed.txt"}
+      let allowedResult = readTool.execute(allowedArgs)
+      check "allowed" in allowedResult.output
+      let deniedArgs = %*{"path": ".env_test"}
+      let deniedResult = readTool.execute(deniedArgs)
+      check "Access denied" in deniedResult.output
+    finally:
+      try: removeFile("test_allowed.txt") except CatchableError: discard
+      try: removeFile(".env_test") except CatchableError: discard
 
   test "Thread archival behavior":
     let msg1 = makeMessage("regular_user", "Hello first", "channel_1", "guild_1", @["bot_user_id"])

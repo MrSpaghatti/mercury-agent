@@ -151,8 +151,11 @@ suite "cli: resolveDbPath":
 
   test "leaves an absolute path alone":
     var cfg = defaultConfig()
-    cfg.dbPath = "/tmp/mercury-cli-resolved.db"
-    check resolveDbPath(cfg) == "/tmp/mercury-cli-resolved.db"
+    let absPath = getTempDir() / "mercury_cli_test_abs_" & $getCurrentProcessId() & ".db"
+    cfg.dbPath = absPath
+    let resolved = resolveDbPath(cfg)
+    check resolved == absPath
+    defer: teardownDb(absPath)
 
 suite "cli: listRecentSessions":
   test "returns empty seq when the db file does not exist":

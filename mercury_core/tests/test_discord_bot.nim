@@ -85,7 +85,7 @@ suite "DiscordBot (DI-based)":
         check call.channelId == "chan1"
     check foundSend
 
-  test "command response is chunked and sent":
+  test "known command triggers at least one send":
     let (bot, api, db) = makeBot(users = @["user1"])
     defer: db.close()
     let msg = Message(
