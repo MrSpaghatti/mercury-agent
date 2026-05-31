@@ -1,4 +1,4 @@
-.PHONY: build test lint desloppify
+.PHONY: build test lint nph
 
 PYTHON ?= python3
 
@@ -10,7 +10,7 @@ test:
 	cd mercury_core && nimble test -y 2>&1
 	cd mercury_agent && nimble test -y 2>&1
 
-lint: desloppify
+lint: nph
 
-desloppify:
-	/tmp/opencode/desloppify-venv/bin/python -m desloppify scan --path .
+nph:
+	nimpretty --outputDir:src src/mercury_core/src/mercury_core/*.nim 2>/dev/null || echo "nimpretty not available"

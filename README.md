@@ -337,16 +337,16 @@ nimble c -r tests/tintegration.nim
   callers when avoidable.
 - Tests use `unittest`, with one suite per behaviour cluster.
 
-## Desloppify
+## Code Formatting
 
-Run the desloppify lint scan explicitly when you want to check the repo:
+Use `nimpretty` (Nim's official formatter) to format code:
 
 ```bash
-make desloppify
+nimpretty src/mercury_core/src/mercury_core/*.nim
+nimpretty src/mercury_agent/src/*.nim
 ```
 
-The target runs `python3 -m desloppify scan --path .` on demand.
-`.desloppify/` is ignored so local scan output does not pollute the repo.
+The `nph` Make target attempts to run it; `nimpretty` is included with Nim.
 
 ## Development Status
 

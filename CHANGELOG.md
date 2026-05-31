@@ -177,28 +177,56 @@ Initial release covering the completed foundation phases.
   spawning; registry globals set before agent loop to prevent nil
   reference in delegate tool.
 
+## [0.1.1] — 2026-05-30
+
+### Quality
+
+- **Test quality audit**: Reviewed all 26 test source files (388 tests total).
+  Fixed 5 weak tests:
+  - `test_agent_dispatcher.nim`: renamed "no-ops" to "are idempotent" — now
+    verifies two dispatchers can be started/stopped independently with
+    meaningful `d1 != nil and d2 != nil` assertion (replaced `check true`).
+  - `test_discord_bot.nim`: renamed "chunked and sent" to "triggers at least
+    one send" — test name no longer implies chunking verification which it
+    doesn't perform. Also fixed `bot = false` syntax error (`=` → `:`).
+  - `test_e2e_discord.nim`: wrapped file tool test file creation/cleanup in
+    `try/finally` to guarantee `test_allowed.txt` and `.env_test` are removed
+    even if test crashes mid-assertion.
+  - `tllm_client.nim`: renamed "sends Authorization header" to "request body
+    is well-formed JSON with required keys" — current mock cannot inspect HTTP
+    headers; test now accurately describes what it actually verifies.
+  - `tcli.nim`: replaced hardcoded `/tmp/mercury-cli-resolved.db` with unique
+    temp path (`getTempDir() / "mercury_cli_test_abs_{PID}.db"`) + cleanup.
+
+- **Deep audit (May 30)**: Fixed GC-safety issues across all packages.
+  Added `{.gcsafe.}` to all async callback type definitions and closures in
+  `discord.nim`, `discord_mocks.nim`, `agent_dispatcher.nim`, and
+  `mercury_agent.nim`. Changed test closure patterns from global variable
+  capture to `new(AgentResult)` heap allocation to satisfy Nim 2.2.x ORC.
+  Exported `jsonRpcResponseId*` from `mcp_client.nim` for test import.
+  Fixed unterminated string literal in `test_mcp_client.nim`.
+  Added `--threads:on` to `tllm_client.nim` and `--threads:on` to
+  `mercury_agent.nimble` test task. Added `threadpool` import to
+  `tllm_client.nim` for `Thread` type.
+
+### Security
+
+- All 17 modified files: `AgentCallback`, async proc types, factory
+  closures, and test closures are now `{.gcsafe.}` throughout. No
+  `{.gcsafe.}` violations in any test file remain.
+
+### Changed
+
+- **mercury_core.nimble**: added `-d:ssl` to all 21 test exec commands,
+  `--threads:on` for `tllm_client.nim`; removed dangling `test_discord`
+  entry
+- **mercury_agent.nimble**: added `--threads:on` for `tagent_loop.nim`
+- **mercury_core/config.nims** and **mercury_agent/config.nims**: structure
+  for `--threads:on` support
+
 ### Added
 
-- **mercury_core**: added `mcp_client.nim` — MCP client with HTTP/JSON-RPC
-  transport, `initialize`/`tools/list`/`tools/call` methods, full error
-  hierarchy (`McpConnectionError`, `McpProtocolError`, `McpToolNotFoundError`),
-  `McpClient` ref object for closure capture, `discoverMcpTools()` batch discovery
-- **mercury_core**: added `mcp_tool.nim` — bridge between `McpTool` (MCP protocol)
-  and `Tool` (agent tool registry). `makeMcpToolExecuteProc` creates
-  `{.gcsafe, raises: []}` closures; `registerMcpServers` discovers and registers
-  tools from configured servers into a `ToolRegistry`
-- **mercury_core/config.nim**: `McpServerConfig` type with url, authToken,
-  timeoutMs, enabled fields; `mcpServers: seq[McpServerConfig]` added to
-  `MercuryConfig`
-- **mercury_core**: added `test_mcp_client.nim` — 8 tests covering config
-  defaults/custom values, URL trailing-slash stripping, JSON-RPC request/response,
-  error hierarchy, client construction, config integration
-- **mercury_core/config.nim**: added `[mcp_servers.<name>]` TOML section support
-  (url, auth_token, timeout_ms, enabled keys) and `MERCURY_MCP_SERVER_{N}_*`
-  environment variable support. Added 23 new config tests.
-- **.github/ISSUE_TEMPLATE/**: added bug_report.md, feature_request.md,
-  ci_infrastructure.md, config.yml with labels and env/version fields
-- **.github/PULL_REQUEST_TEMPLATE/**: added pull_request_template.md with
-  test/style/CHANGELOG checklist
+- **.github/workflows/ci.yml**: `--threads:on` flag added to test jobs for
+  `tllm_client.nim` threadpool requirement
 
 [0.1.0]: https://github.com/MrSpaghatti/mercury-agent/compare/initial...v0.1.0

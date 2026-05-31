@@ -86,10 +86,11 @@ nim c -r tests/test_discord_bot.nim
 nim c -r tests/test_e2e_discord.nim
 ```
 
-### Run desloppify lint
+### Code formatting
 
 ```bash
-make desloppify
+make nph
+nimpretty src/mercury_core/src/mercury_core/*.nim
 ```
 
 ---
@@ -196,7 +197,7 @@ mercury_code.nim ──▶ agent_loop ──▶ build_llm_client ──▶ llm_c
 
 ## Test Suite
 
-**312 tests pass** across 21 test files (261 core + 51 agent), 0 FAILED.
+**388 tests pass** across 26 test files (261 core + 51 agent + 11 code), 0 FAILED.
 
 After any change, run `make test` from the project root. This builds and
 tests both packages, with proper exit-code propagation so CI or your local

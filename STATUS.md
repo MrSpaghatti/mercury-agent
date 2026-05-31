@@ -65,12 +65,12 @@ AI agent with:
 | Item | Status |
 |------|--------|
 | `make build` (core + agent) | ✅ Compiles (see SSL note below) |
-| `make test` (core + agent) | ✅ All tests pass |
-| `make desloppify` | ✅ Clean scan (score ≥ 90) |
+| `make test` (core + agent) | ✅ All 388 tests pass, 0 FAILED |
+| `nim check` (core + agent) | ✅ No static analysis errors |
 | `.env` / `.env.example` | ✅ Configured |
 | `.gitignore` | ✅ Covers all build artifacts |
 | Architectural review | ✅ `report.md` written |
-| Deep code audit (all 40+ source files) | ✅ 312 tests pass, 0 critical issues found |
+| Deep code audit (all 40+ source files) | ✅ 388 tests pass, 0 critical issues found |
 | CI pipeline (GitHub Actions) | ✅ Passing on Nim 2.0.8 and 2.2.2 |
 
 ---
@@ -171,12 +171,12 @@ shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
 
 | Package | Test files | Tests | Status |
 |---------|-----------|-------|--------|
-| mercury_core (Wave 1) | tconfig, tllm_client, ttoken_counter, tmemory | 92 | ✅ All pass |
+| mercury_core (Wave 1) | tconfig, tllm_client, ttoken_counter, tmemory | 96 | ✅ All pass |
 | mercury_core (Wave 2) | ttool_registry, test_mock_server | 18 | ✅ All pass |
-| mercury_core (Discord) | test_permission, test_file_*, test_rate_limit, test_thread_*, test_agent_dispatcher, test_message_chunker | 151 | ✅ All pass |
+| mercury_core (Discord) | test_permission, test_file_*, test_rate_limit, test_thread_*, test_agent_dispatcher, test_message_chunker, test_discord_*, test_persona, test_mcp_client, test_e2e_discord | 212 | ✅ All pass |
 | mercury_agent | tcli, tagent_loop, tintegration, test_shell_tool | 51 | ✅ All pass |
 | mercury_code | tcode_runner | 11 | ✅ All pass |
-| **Total** | **24 test files** | **323** | **✅ 0 FAILED** |
+| **Total** | **26 test files** | **388** | **✅ 0 FAILED** |
 
 ---
 

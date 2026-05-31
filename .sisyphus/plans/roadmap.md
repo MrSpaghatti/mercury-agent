@@ -15,7 +15,8 @@
 | Phase 2 | Discord bot | discord.nim, permission, file_tool, agent_dispatcher |
 | P0 | SSL build fix | `config.nims` with `--define:ssl` |
 | P0 | CI pipeline | GitHub Actions on Nim 2.0.8 + 2.2.2 |
-| P0 | Deep code audit | All 40+ source files audited, 312+ tests verified |
+| P0 | Deep code audits | All 40+ source files audited, 388 tests verified |
+| P0 | Test quality audit | 388 tests reviewed, 5 weak tests fixed across 5 files |
 | P1 | mercury_code | code_runner, code_tool, compile, harness CLI |
 
 ---
