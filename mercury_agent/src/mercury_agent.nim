@@ -882,12 +882,13 @@ proc cmdDaemon*(
 
   # Create the agent dispatcher — callback sends results to Discord
   let sendFn = makeSendFn(api)
-  let dispatcher = newAgentDispatcher(proc(r: agent_dispatcher.AgentResult) =
-    let text = if r.error.isSome: "Error: " & r.error.get()
-               else: r.responseText
-    let chunks = chunkMessage(text)
-    for chunk in chunks:
-      asyncCheck sendWithLogging(sendFn, r.channelId, chunk)
+  let dispatcher = newAgentDispatcher(proc(r: agent_dispatcher.AgentResult) {.gcsafe, raises: [].} =
+    {.cast(raises: []).}:
+      let text = if r.error.isSome: "Error: " & r.error.get()
+                 else: r.responseText
+      let chunks = chunkMessage(text)
+      for chunk in chunks:
+        asyncCheck sendWithLogging(sendFn, r.channelId, chunk)
   )
 
   # Create the DI-based DiscordBot with real API callbacks
