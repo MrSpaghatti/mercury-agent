@@ -1,28 +1,9 @@
 ## Tests for mercury_core/mcp_client.nim
 
-import std/[unittest, httpclient, json, strutils, os]
+import std/[unittest, json, asyncdispatch, httpclient]
 import mercury_core/mcp_client
 import mercury_core/config
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-proc makeMinimalServer(): string =
-  ## Returns a minimal MCP server URL for testing. In tests, we validate
-  ## that the client constructs requests correctly and handles responses
-  ## even when no live server is available.
-  result = "http://localhost:19999/mcp"
-
-proc validInitializeResponse(): string =
-  ## A valid JSON-RPC initialize response.
-  """{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{"name":"test-mcp","version":"1.0.0"}}}"""
-
-proc validToolsListResponse(tools: JsonNode): string =
-  "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":" & $tools & "}}"
-
-proc validToolCallResponse(text: string): string =
-  """{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":""" & $text & """}]}}"""
+import mock_mcp_server
 
 # ---------------------------------------------------------------------------
 # Tests: config parsing
@@ -136,7 +117,7 @@ suite "mcp_client construction":
     check client.cfg.timeoutMs == 15_000
 
 # ---------------------------------------------------------------------------
-# Tests: config integration — McpServerConfig in MercuryConfig
+# Tests: config integration -- McpServerConfig in MercuryConfig
 # ---------------------------------------------------------------------------
 
 suite "config integration":
@@ -151,3 +132,126 @@ suite "config integration":
     check cfg.authToken == "secret"
     check cfg.timeoutMs == 5000
     check cfg.enabled == true
+
+# ---------------------------------------------------------------------------
+# Integration tests: async mock server x async HTTP client
+# These verify the MCP protocol JSON-RPC messages are correctly
+# constructed and parsed by communicating with a mock server.
+# ---------------------------------------------------------------------------
+
+proc mcpPost(cl: AsyncHttpClient; url: string; body: string): Future[AsyncResponse] =
+  ## Helper: POST with Content-Type header.
+  let hdrs = newHttpHeaders([("Content-Type", "application/json")])
+  result = cl.request(url, httpMethod = HttpPost, body = body, headers = hdrs)
+
+suite "mcp protocol integration":
+  test "initialize returns protocol version":
+    let mock = newMockMcpServer()
+    mock.setInitializeResponse("2024-11-05")
+    waitFor mock.start()
+    defer: mock.stop()
+
+    let cl = newAsyncHttpClient()
+    let resp = waitFor mcpPost(cl, mock.url(), $jsonRpcRequest("initialize", newJObject()))
+    let body = waitFor resp.body
+    let json = parseJson(body)
+    check json["result"]["protocolVersion"].getStr() == "2024-11-05"
+
+  test "listTools returns tool definitions":
+    let mock = newMockMcpServer()
+    mock.addTool("read_file", "Read a file from disk")
+    mock.addTool("write_file", "Write content to disk",
+                 """{"type":"object","properties":{"path":{"type":"string"}}}""")
+    waitFor mock.start()
+    defer: mock.stop()
+
+    let cl = newAsyncHttpClient()
+    let resp = waitFor mcpPost(cl, mock.url(), $jsonRpcRequest("tools/list"))
+    let body = waitFor resp.body
+    let json = parseJson(body)
+    check json["result"]["tools"].len == 2
+    check json["result"]["tools"][0]["name"].getStr() == "read_file"
+    check json["result"]["tools"][1]["name"].getStr() == "write_file"
+    check json["result"]["tools"][1]["description"].getStr() == "Write content to disk"
+
+  test "listTools empty when no tools registered":
+    let mock = newMockMcpServer()
+    waitFor mock.start()
+    defer: mock.stop()
+
+    let cl = newAsyncHttpClient()
+    let resp = waitFor mcpPost(cl, mock.url(), $jsonRpcRequest("tools/list"))
+    let body = waitFor resp.body
+    let json = parseJson(body)
+    check json["result"]["tools"].len == 0
+
+  test "callTool returns text content":
+    let mock = newMockMcpServer()
+    mock.setToolCallResult("command output")
+    waitFor mock.start()
+    defer: mock.stop()
+
+    let cl = newAsyncHttpClient()
+    let resp = waitFor mcpPost(cl, mock.url(),
+      $jsonRpcRequest("tools/call", %*{"name": "test", "arguments": {}}))
+    let body = waitFor resp.body
+    let json = parseJson(body)
+    check json["result"]["content"][0]["text"].getStr() == "command output"
+
+  test "initialize error returns JSON-RPC error":
+    let mock = newMockMcpServer()
+    mock.setInitializeError(-32603, "init failed")
+    waitFor mock.start()
+    defer: mock.stop()
+
+    let cl = newAsyncHttpClient()
+    let resp = waitFor mcpPost(cl, mock.url(), $jsonRpcRequest("initialize", newJObject()))
+    let body = waitFor resp.body
+    let json = parseJson(body)
+    check json.hasKey("error")
+    check json["error"]["message"].getStr() == "init failed"
+
+  test "callTool error returns JSON-RPC error":
+    let mock = newMockMcpServer()
+    mock.setToolCallError(-32603, "tool error")
+    waitFor mock.start()
+    defer: mock.stop()
+
+    let cl = newAsyncHttpClient()
+    let resp = waitFor mcpPost(cl, mock.url(),
+      $jsonRpcRequest("tools/call", %*{"name": "bad", "arguments": {}}))
+    let body = waitFor resp.body
+    let json = parseJson(body)
+    check json.hasKey("error")
+    check json["error"]["message"].getStr() == "tool error"
+
+  test "HTTP error returns error response":
+    let mock = newMockMcpServer()
+    mock.setHttpError(500)
+    waitFor mock.start()
+    defer: mock.stop()
+
+    let cl = newAsyncHttpClient()
+    let resp = waitFor mcpPost(cl, mock.url(), $jsonRpcRequest("initialize"))
+    check $resp.code == "500 Internal Server Error"
+
+  test "unknown method returns method not found":
+    let mock = newMockMcpServer()
+    waitFor mock.start()
+    defer: mock.stop()
+
+    let cl = newAsyncHttpClient()
+    let resp = waitFor mcpPost(cl, mock.url(), $jsonRpcRequest("unknown_method"))
+    let body = waitFor resp.body
+    let json = parseJson(body)
+    check json["error"]["code"].getInt() == -32601
+
+  test "request counter tracks requests":
+    let mock = newMockMcpServer()
+    waitFor mock.start()
+    defer: mock.stop()
+
+    let cl = newAsyncHttpClient()
+    discard waitFor mcpPost(cl, mock.url(), $jsonRpcRequest("initialize"))
+    discard waitFor mcpPost(cl, mock.url(), $jsonRpcRequest("tools/list"))
+    check mock.requestCount == 2

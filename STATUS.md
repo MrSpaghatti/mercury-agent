@@ -173,10 +173,11 @@ shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
 |---------|-----------|-------|--------|
 | mercury_core (Wave 1) | tconfig, tllm_client, ttoken_counter, tmemory | 96 | ✅ All pass |
 | mercury_core (Wave 2) | ttool_registry, test_mock_server | 18 | ✅ All pass |
-| mercury_core (Discord) | test_permission, test_file_*, test_rate_limit, test_thread_*, test_agent_dispatcher, test_message_chunker, test_discord_*, test_persona, test_mcp_client, test_e2e_discord | 212 | ✅ All pass |
+| mercury_core (Discord) | test_permission, test_file_*, test_rate_limit, test_thread_*, test_agent_dispatcher, test_message_chunker, test_discord_*, test_persona, test_e2e_discord | ~200 | ✅ All pass |
+| mercury_core (MCP) | test_mcp_client, test_mcp_tool | 36 | ✅ All pass |
 | mercury_agent | tcli, tagent_loop, tintegration, test_shell_tool | 51 | ✅ All pass |
 | mercury_code | tcode_runner | 11 | ✅ All pass |
-| **Total** | **26 test files** | **388** | **✅ 0 FAILED** |
+| **Total** | **28 test files** | **~412** | **✅ 0 FAILED** |
 
 ---
 
@@ -189,10 +190,12 @@ Near-term candidates (in priority order):
    Green CI badge on every push.
 2. **~~mercury_code package (P1)~~** ✅ — Autonomous coding harness with compile,
    test, read_file, write_file tools. 11 tests pass.
-3. **MCP support (P2)** — 🔄 In progress. `mcp_client.nim` (HTTP/JSON-RPC
+3. **MCP support (P2)** — ✅ Complete. `mcp_client.nim` (HTTP/JSON-RPC
    transport, initialize, tools/list, tools/call), `mcp_tool.nim` (tool
    registration bridge), `McpServerConfig` added to `MercuryConfig`.
-   Build passes on both Nim 2.0.x and 2.2.x. 8 tests written.
+   TOML `[mcp_servers.*]` and env-var config loading. 36 tests across
+   `test_mcp_client.nim` and `test_mcp_tool.nim` — all pass.
+   (SSE/streaming transport deferred as non-blocking.)
 4. **Sub-agent delegation (P2)** — Allow the ReAct loop to spawn child
    agents for parallel exploration.
 5. **Web UI (P3)** — Lightweight HTTP chat frontend.

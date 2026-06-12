@@ -113,6 +113,19 @@ Initial release covering the completed foundation phases.
 
 ### Added
 
+- **mercury_core**: `mock_mcp_server.nim` — async mock MCP HTTP server
+  for testing against the `asynchttpserver` pattern. Supports initialize,
+  tools/list, tools/call, JSON-RPC error responses, and HTTP error codes.
+- **mercury_core**: `test_mcp_client.nim` expanded from 16 to 25 tests.
+  Added 9 integration tests using the mock MCP server to verify the
+  JSON-RPC protocol: initialize handshake, tool discovery, tool calls,
+  error handling, method routing, and request counting.
+- **mercury_core**: `test_mcp_tool.nim` — 11 tests for the MCP tool
+  registration bridge (`mcp_tool.nim`): single-tool registration,
+  duplicate detection, empty-name rejection, null schema handling,
+  multi-tool batch registration, disabled/unreachable server handling,
+  and execute-proc error mapping.
+
 - **mercury_code** — autonomous coding harness binary:
   - `code_runner.nim`: `CodingHarnessConfig`, `CompileResult`/`CompileError`,
     `parseNimErrors()`, `formatCompileResult()`

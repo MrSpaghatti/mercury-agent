@@ -29,4 +29,5 @@ task test, "Run all tests":
   exec "nim c -d:ssl -r tests/test_thread_reconnection.nim"
   exec "nim c -d:ssl -r tests/test_agent_dispatcher.nim"
   exec "nim c -d:ssl -r tests/test_mcp_client.nim"
+  exec "nim c -d:ssl -r tests/test_mcp_tool.nim"
   exec "nim c -d:ssl -r tests/test_persona.nim"

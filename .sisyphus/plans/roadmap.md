@@ -94,7 +94,7 @@ self-contained coding harness binary that reuses the ReAct loop from
 
 **Acceptance**: 11/11 tests pass, binary compiles and runs `--help`.
 
-### P2 — MCP Support (estimated: 2 sessions) ✅ IN PROGRESS
+### P2 — MCP Support (estimated: 2 sessions) ✅ COMPLETE
 
 Model Context Protocol integration for external tool discovery.
 
@@ -106,12 +106,11 @@ Model Context Protocol integration for external tool discovery.
   - `registerMcpServers` wires discovered tools into `ToolRegistry`
 - ✅ MCP servers configured via `MercuryConfig.mcpServers`
   - `mcpServers` seq in config, TOML `[mcp_servers]` section, env vars
-- 🔲 Config loading: TOML parser needs `[mcp_servers]` section
-  - `MERCURY_MCP_SERVER_0_URL` etc. for env-only setup
-- 🔲 SSE/streaming transport for server-driven tool calls
-  - Current: HTTP/JSON-RPC polling (sufficient for initial integration)
-- 🔲 Full test suite for MCP client, MCP tool registration
-- 🔲 CHANGELOG entry
+- ✅ TOML `[mcp_servers]` section parsing + `MERCURY_MCP_SERVER_{N}_{KEY}` env vars
+- ✅ `mock_mcp_server.nim` — async mock MCP server for protocol-level testing
+- ✅ Full test suite: 36 tests across `test_mcp_client` (25 tests) and `test_mcp_tool` (11 tests)
+- ✅ CHANGELOG entry for MCP support
+- 🔲 SSE/streaming transport (deferred — HTTP/JSON-RPC polling sufficient for initial integration)
 
 **Why MCP**: Instead of hardcoding every possible tool (search, db,
 calculator, etc.), the agent discovers them at runtime. This keeps the
