@@ -62,3 +62,4 @@ mercury_agent/src/agent_loop
 mercury_agent/src/tools/shell
 mercury_agent/tests/tdelegate_tool
 progress.md
+mercury_core/tests/test_daemon_delegation

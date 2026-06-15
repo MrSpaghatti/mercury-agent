@@ -30,7 +30,8 @@ import mercury_core/message_chunker
 import mercury_core/mcp_tool
 import mercury_core/persona
 import mercury_core/delegate
-from mercury_core/agent_dispatcher import AgentDispatcher, AgentRequest, newAgentDispatcher
+from mercury_core/agent_dispatcher import AgentDispatcher, AgentRequest, AgentRunFn,
+    AgentLoopResult, newAgentDispatcher
 
 import dimscord
 
@@ -937,8 +938,10 @@ proc cmdDaemon*(
   # Build LLM client
   let llm = buildLLMClient(cfg)
 
-  # Build tool registry — file tools only, NO shell tool for Discord
+  # Build tool registry
   var reg = newToolRegistry()
+
+  # File tools — always available for safe Discord file access
   let fileRules = FileRules(
     sandboxDir: "",
     allowPatterns: cfg.discord.fileRules.allow,
@@ -946,11 +949,24 @@ proc cmdDaemon*(
     denyPatterns: cfg.discord.fileRules.deny,
   )
   reg.register(fileReadTool(fileRules))
-  # fileWriteTool needs a userId for permission checks; per-message user ID
-  # will be wired in the full agent integration (task 4.16). For now we pass
-  # an empty string — the tool-level permission check will use the config's
-  # default allow/deny lists.
   reg.register(fileWriteTool(fileRules, cfg.discord, ""))
+
+  # Delegate + MCP tools — opt-in via daemonDelegation config flag.
+  # Never include the shell tool in Discord mode for security.
+  if cfg.discord.daemonDelegation:
+    # Set agent globals so the delegate tool can initialise.
+    setGlobalLLMClient(llm)
+    setMercuryConfig(cfg)
+    let personasPath = defaultPersonasPath()
+    let pReg =
+      if fileExists(personasPath): loadPersonasFile(personasPath)
+      else: newPersonaRegistry()
+    setPersonaRegistry(pReg)
+    setDelegationConfig(defaultDelegationConfig())
+
+    reg.register(makeDelegateTool())
+    if cfg.mcpServers.len > 0:
+      discard registerMcpServers(reg, cfg.mcpServers)
 
   # Open memory store
   var mem = openMemory(cfg)
@@ -974,13 +990,35 @@ proc cmdDaemon*(
 
   # Create the agent dispatcher — callback sends results to Discord
   let sendFn = makeSendFn(api)
-  let dispatcher = newAgentDispatcher(proc(r: agent_dispatcher.AgentResult) {.gcsafe, raises: [].} =
+  let runFn: AgentRunFn = proc(cfg: MercuryConfig; llm: LLMClient;
+                                 reg: ToolRegistry; dbPath, userInput: string):
+                                   AgentLoopResult {.gcsafe, raises: [].} =
+    {.cast(raises: []).}:
+      try:
+        var mem = newMemory(dbPath)
+        defer: mem.close()
+        let agentResult = runAgentLoop(cfg, llm, reg, mem, userInput)
+        AgentLoopResult(
+          responseText: agentResult.text,
+          error: none[string](),
+          sessionId: agentResult.sessionId
+        )
+      except CatchableError as e:
+        AgentLoopResult(
+          responseText: "",
+          error: some(e.msg),
+          sessionId: ""
+        )
+
+  let callbackProc = proc(r: agent_dispatcher.AgentResult) {.gcsafe, raises: [].} =
     {.cast(raises: []).}:
       let text = if r.error.isSome: "Error: " & r.error.get()
                  else: r.responseText
       let chunks = chunkMessage(text)
       for chunk in chunks:
         asyncCheck sendWithLogging(sendFn, r.channelId, chunk)
+  let dispatcher = newAgentDispatcher(
+    callbackProc, runFn, cfg, llm, reg, resolveDbPath(cfg)
   )
 
   # Create the DI-based DiscordBot with real API callbacks

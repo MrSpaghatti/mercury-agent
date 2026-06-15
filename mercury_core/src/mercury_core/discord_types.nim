@@ -12,6 +12,7 @@ type
     users*: AccessControl
     fileRules*: AccessControl
     tools*: AccessControl
+    daemonDelegation*: bool  ## Enable agent delegation and MCP tools in daemon mode
 
 proc defaultDiscordConfig*(): DiscordConfig =
   result = DiscordConfig(
@@ -20,5 +21,6 @@ proc defaultDiscordConfig*(): DiscordConfig =
     admins: AccessControl(allow: @[], deny: @[]),
     users: AccessControl(allow: @[], deny: @[]),
     fileRules: AccessControl(allow: @[], deny: @[".env", ".ssh", ".aws", ".gnupg", "*.key", "*.pem"]),
-    tools: AccessControl(allow: @[], deny: @[])
+    tools: AccessControl(allow: @[], deny: @[]),
+    daemonDelegation: false
   )
