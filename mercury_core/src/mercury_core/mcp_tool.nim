@@ -123,12 +123,13 @@ proc registerMcpServer*(
     discard client.initialize()
     let tools = client.listTools()
     registerMcpTools(reg, tools, client)
+    # Keep client alive — its HttpClient is used by each tool's execute proc.
     result = tools
   except CatchableError as e:
+    # Close only on error to avoid leaking connections.
+    client.http.close()
     stderr.writeLine("Warning: MCP server '" & serverCfg.url &
                      "' registration failed: " & e.msg)
-  finally:
-    client.http.close()
 
 proc registerMcpServers*(
     reg: ToolRegistry;

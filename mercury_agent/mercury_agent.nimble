@@ -17,3 +17,4 @@ task test, "Run all tests":
   exec "nim c --path:src --path:../mercury_core/src --path:../mercury_core/tests -r tests/tcli.nim"
   exec "nim c --path:src --path:../mercury_core/src --path:../mercury_core/tests -r tests/test_shell_tool.nim"
   exec "nim c --path:src --path:../mercury_core/src --path:../mercury_core/tests --threads:on -r tests/tintegration.nim"
+  exec "nim c --path:src --path:../mercury_core/src --path:../mercury_core/tests -r tests/tdelegate_tool.nim"

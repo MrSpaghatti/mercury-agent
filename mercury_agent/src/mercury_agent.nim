@@ -288,10 +288,15 @@ proc makeDelegateExecuteProc*(): auto =
     captured.delegationConfig.useDelegationSlot()
 
     # Build a proper registry so the child has tools.
+    # Temporarily swap delegation config so the child's delegate tool
+    # captures its own bounds rather than the parent's.
+    let savedDc = gGlobals.delegationConfig
+    gGlobals.delegationConfig = childCfg.delegation
     var childReg = newToolRegistry()
     childReg.register(shellTool())
     if not gGlobals.isNil and gGlobals.llmClient.baseUrl.len > 0:
       childReg.register(makeDelegateTool())
+    gGlobals.delegationConfig = savedDc
     if parentCfg.mcpServers.len > 0:
       discard registerMcpServers(childReg, parentCfg.mcpServers)
     let scopedChildReg = scopedRegistry(childReg, persona)

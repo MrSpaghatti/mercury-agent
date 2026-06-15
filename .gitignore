@@ -60,3 +60,4 @@ mercury_core/src/mercury_core/persona
 mercury_core/src/mercury_core/tool_registry
 mercury_agent/src/agent_loop
 mercury_agent/src/tools/shell
+mercury_agent/tests/tdelegate_tool
