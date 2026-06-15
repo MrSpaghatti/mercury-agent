@@ -64,8 +64,8 @@ AI agent with:
 ### Quality / Infrastructure (100%)
 | Item | Status |
 |------|--------|
-| `make build` (core + agent) | ✅ Compiles (see SSL note below) |
-| `make test` (core + agent) | ✅ All 388 tests pass, 0 FAILED |
+| `make build` (core + agent + code) | ✅ Compiles (see SSL note below) |
+| `make test` (core + agent) | ✅ All 441 tests pass, 0 FAILED |
 | `nim check` (core + agent) | ✅ No static analysis errors |
 | `.env` / `.env.example` | ✅ Configured |
 | `.gitignore` | ✅ Covers all build artifacts |
@@ -176,9 +176,9 @@ shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
 | mercury_core (Discord) | test_permission, test_file_*, test_rate_limit, test_thread_*, test_agent_dispatcher, test_message_chunker, test_discord_*, test_persona, test_e2e_discord | ~200 | ✅ All pass |
 | mercury_core (MCP) | test_mcp_client, test_mcp_tool | 36 | ✅ All pass |
 | mercury_core (Persona) | test_persona | 22 | ✅ All pass |
-| mercury_agent | tcli, tagent_loop, tintegration, test_shell_tool | 68 | ✅ All pass |
+| mercury_agent | tcli, tagent_loop, tintegration, test_shell_tool, tbench | ~79 | ✅ All pass |
 | mercury_code | tcode_runner | 11 | ✅ All pass |
-| **Total** | **28 test files** | **~424** | **✅ 0 FAILED** |
+| **Total** | **29 test files** | **~441** | **✅ 0 FAILED** |
 
 ---
 

@@ -113,6 +113,18 @@ Initial release covering the completed foundation phases.
 
 ### Added
 
+- **mercury_agent/tests/tbench.nim** — component benchmark suite that
+  measures framework overhead independent of LLM latency. Results:
+  - Memory ops (session + 3 msgs + history): **0.264ms** per run
+  - Tool construction: **0.003ms** per tool
+  - Tool execution: **0.301µs** per call
+  - Registry lookup: **0.422µs** per call
+  - LLMClient construction: **0.002ms** per instance
+  - Config default+validate: **0.195µs** per instance
+  - **Key finding**: framework overhead is **~0.1ms per ReAct iteration**
+    (0.01% of ~800ms LLM call time). The agent loop is NOT the bottleneck.
+  - Run: `nim c -d:ssl -r tests/tbench.nim` (from mercury_agent/)
+
 - **mercury_core**: `mock_mcp_server.nim` — async mock MCP HTTP server
   for testing against the `asynchttpserver` pattern. Supports initialize,
   tools/list, tools/call, JSON-RPC error responses, and HTTP error codes.
