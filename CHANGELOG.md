@@ -190,7 +190,7 @@ Initial release covering the completed foundation phases.
   spawning; registry globals set before agent loop to prevent nil
   reference in delegate tool.
 
-## [0.1.1] — 2026-05-30
+## [0.1.1] — 2026-06-14
 
 ### Fixed
 
