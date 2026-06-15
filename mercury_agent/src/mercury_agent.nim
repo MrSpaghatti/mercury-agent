@@ -135,6 +135,7 @@ type
     personaRegistry*: PersonaRegistry
     llmClient*: LLMClient
     delegationConfig*: DelegationConfig
+    mercuryConfig*: MercuryConfig
 
 var gGlobals*: AgentGlobals = nil
 
@@ -156,9 +157,19 @@ proc setDelegationConfig*(dc: DelegationConfig) =
   else:
     gGlobals.delegationConfig = dc
 
+proc setMercuryConfig*(cfg: MercuryConfig) =
+  if gGlobals.isNil:
+    gGlobals = AgentGlobals(mercuryConfig: cfg)
+  else:
+    gGlobals.mercuryConfig = cfg
+
 # ---------------------------------------------------------------------------
 # Delegate tool
 # ---------------------------------------------------------------------------
+
+# Forward declaration needed because makeDelegateExecuteProc's closure
+# body references makeDelegateTool, which is defined later in the file.
+proc makeDelegateTool*(): Tool
 
 proc makeDelegateParams*(): JsonNode =
   ## Builds the JSON Schema for the delegate tool parameters.
@@ -245,7 +256,9 @@ proc makeDelegateExecuteProc*(): auto =
         isError: true,
         exitCode: 1,
       )
-    let parentCfg = defaultConfig()
+    let parentCfg =
+      if captured.mercuryConfig.provider.len > 0: captured.mercuryConfig
+      else: defaultConfig()
     var childCfg = newAgentConfig(parentCfg)
     if persona.systemPrompt.len > 0:
       childCfg.systemPrompt = persona.systemPrompt
@@ -257,12 +270,14 @@ proc makeDelegateExecuteProc*(): auto =
       persona.maxDelegationsPerRun,
       persona.name,
     )
-    let memPath =
-      if parentCfg.dbPath.len > 0: parentCfg.dbPath
-      else: "~/.local/share/mercury/mercury.db"
+    # Inline resolveDbPath logic since it's defined later in the file.
+    let rawPath = parentCfg.dbPath
+    let dbPath =
+      if rawPath.startsWith("~"): expandTilde(rawPath)
+      else: rawPath
     var childMem: Memory
     try:
-      childMem = newMemory(memPath)
+      childMem = newMemory(dbPath)
     except CatchableError:
       return ToolResult(
         output: "delegate: cannot open memory store",
@@ -272,10 +287,19 @@ proc makeDelegateExecuteProc*(): auto =
     # Consume one delegation slot before spawning the child.
     captured.delegationConfig.useDelegationSlot()
 
+    # Build a proper registry so the child has tools.
+    var childReg = newToolRegistry()
+    childReg.register(shellTool())
+    if not gGlobals.isNil and gGlobals.llmClient.baseUrl.len > 0:
+      childReg.register(makeDelegateTool())
+    if parentCfg.mcpServers.len > 0:
+      discard registerMcpServers(childReg, parentCfg.mcpServers)
+    let scopedChildReg = scopedRegistry(childReg, persona)
+
     let childResult = runAgentLoop(
       agentCfg = childCfg,
       llm = captured.llmClient,
-      registry = newToolRegistry(),
+      registry = scopedChildReg,
       memory = childMem,
       userInput = task,
     )
@@ -718,6 +742,7 @@ proc cmdRunPersona*(
   # Set agent globals so the delegate tool can work
   setGlobalLLMClient(llm)
   setPersonaRegistry(reg)
+  setMercuryConfig(cfg)
 
   # Build child agent config (must happen before registries so delegation
   # bounds are available when the delegate tool is wired).
