@@ -1,5 +1,3 @@
-import std/[strutils]
-
 const
   DefaultMaxDelegationDepth* = 2
   DefaultMaxDelegationsPerRun* = 5

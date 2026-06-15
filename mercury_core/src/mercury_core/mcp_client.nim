@@ -120,7 +120,6 @@ proc callMethod*(client: McpClient; mcpMethod: string; params: JsonNode = nil): 
   ## Sends a JSON-RPC request to the MCP server and returns the parsed response.
   ## Raises on transport errors, HTTP errors, or JSON-RPC error responses.
   let reqBody = jsonRpcRequest(mcpMethod, params)
-  let bodyStr = reqBody.pretty()  # pretty is fine for debugging; for perf use $reqBody
 
   var response: Response
   try:
@@ -166,7 +165,7 @@ proc callMethod*(client: McpClient; mcpMethod: string; params: JsonNode = nil): 
       -1
     var err = newException(McpProtocolError,
       "MCP server '" & client.cfg.url &
-      "' returned JSON-RPC error: " & errMsg)
+      "' returned JSON-RPC error [" & $errCode & "]: " & errMsg)
     err.serverUrl = client.cfg.url
     raise err
 
@@ -210,13 +209,17 @@ proc initialize*(client: McpClient; serverName: string = "mercury"): string =
       "initialize response missing protocolVersion at '" & client.cfg.url & "'")
 
   # Send "initialized" notification (no response expected).
+  # Best-effort: wrap in try/except so a dropped connection doesn't crash.
   let notif = jsonRpcRequest("notifications/initialized", newJObject())
-  discard client.http.request(
-    client.cfg.url,
-    httpMethod = HttpPost,
-    body = $notif,
-    headers = newHttpHeaders({"Content-Type": "application/json"}),
-  )
+  try:
+    discard client.http.request(
+      client.cfg.url,
+      httpMethod = HttpPost,
+      body = $notif,
+      headers = newHttpHeaders({"Content-Type": "application/json"}),
+    )
+  except CatchableError:
+    discard  # notification is best-effort per JSON-RPC spec
   client.protocolVersion
 
 proc listTools*(client: McpClient): seq[McpTool] =
@@ -297,15 +300,14 @@ proc discoverTools*(configs: seq[McpServerConfig]): seq[McpTool] =
     if not cfg.enabled:
       continue
     var client = newMcpClient(cfg)
+    defer: client.http.close()
     try:
       discard initialize(client)
       let tools = client.listTools()
       for tool in tools:
-        # Prefix name with server-derived namespace to avoid collisions.
-        var prefixed = McpTool(server: tool.server, name: tool.name,
-                               description: tool.description,
-                               inputSchema: tool.inputSchema)
-        result.add(prefixed)
+        # TODO: prefix tool.name with a server-derived namespace to avoid
+        # collisions when multiple MCP servers expose tools with the same name.
+        result.add(tool)
     except CatchableError as e:
       # Connection failed — log and continue with remaining servers.
       stderr.writeLine("Warning: MCP server '" & cfg.url &

@@ -192,6 +192,33 @@ Initial release covering the completed foundation phases.
 
 ## [0.1.1] — 2026-05-30
 
+### Fixed
+
+- **MCP/persona/delegation deep audit (Jun 11)**: 9 issues fixed across 6 files.
+  - **delegate.nim**: Wired `canDelegate()` check and `useDelegationSlot()` into
+    the delegate tool's execute path — delegation depth is now enforced at
+    runtime instead of being dead code. The delegate tool is also registered
+    in `cmdRunPersona`'s registry so it's available to persona-scoped agents.
+  - **mcp_client.nim**: Added `defer: client.http.close()` in `discoverTools`
+    to prevent HTTP handle leaks in long-running processes. Also wrapped the
+    `notifications/initialized` POST in try/except so a dropped connection
+    between initialize and notification doesn't crash the caller. Removed
+    dead `bodyStr` variable (unused `pretty()` call). Fixed misleading
+    `discoverTools` comment that claimed to prefix tool names but didn't.
+    Included `errCode` in JSON-RPC error messages (was computed but unused).
+  - **mcp_tool.nim**: Removed dead `except Exception` branch (unreachable
+    after `CatchableError` + `Defect` handlers). Changed `var McpClient`
+    parameters to `McpClient` (ref object, no mutation needed). Added
+    `finally: client.http.close()` in `registerMcpServer` to prevent HTTP
+    handle leak. Added `std/httpclient` import for the close() call.
+  - **persona.nim**: Removed tautological condition in `applyPersonaDefaults`
+    (`A and A` no-op).
+  - **config.nim**: Added `name*: string` to `McpServerConfig` — TOML section
+    names (`[mcp_servers.filesystem]` → `"filesystem"`) are now propagated
+    through config for use in error messages and future tool-prefixing.
+  - **mercury_agent.nim**: Removed unused `mcp_client` import.
+  - **delegate.nim**: Removed unused `strutils` import.
+
 ### Quality
 
 - **Test quality audit**: Reviewed all 26 test source files (388 tests total).

@@ -27,7 +27,6 @@ import mercury_core/thread_mapping
 import mercury_core/file_tool
 import mercury_core/file_path_validator
 import mercury_core/message_chunker
-import mercury_core/mcp_client
 import mercury_core/mcp_tool
 import mercury_core/persona
 import mercury_core/delegate
@@ -135,6 +134,7 @@ type
     ## Container for agent-loop globals that need safe closure capture.
     personaRegistry*: PersonaRegistry
     llmClient*: LLMClient
+    delegationConfig*: DelegationConfig
 
 var gGlobals*: AgentGlobals = nil
 
@@ -149,6 +149,12 @@ proc setGlobalLLMClient*(llm: LLMClient) =
     gGlobals = AgentGlobals(llmClient: llm)
   else:
     gGlobals.llmClient = llm
+
+proc setDelegationConfig*(dc: DelegationConfig) =
+  if gGlobals.isNil:
+    gGlobals = AgentGlobals(delegationConfig: dc)
+  else:
+    gGlobals.delegationConfig = dc
 
 # ---------------------------------------------------------------------------
 # Delegate tool
@@ -181,6 +187,20 @@ proc makeDelegateExecuteProc*(): auto =
     if captured.isNil:
       return ToolResult(
         output: "delegate: agent globals not initialized",
+        isError: true,
+        exitCode: 1,
+      )
+    # Check delegation depth tracking before spawning.
+    if not captured.delegationConfig.canDelegate():
+      let reason =
+        if captured.delegationConfig.maxDepth <= 0:
+          "maximum delegation depth reached"
+        elif captured.delegationConfig.maxDelegations <= 0:
+          "maximum delegations per run exhausted"
+        else:
+          "delegation limit reached"
+      return ToolResult(
+        output: "delegate: " & reason,
         isError: true,
         exitCode: 1,
       )
@@ -249,6 +269,9 @@ proc makeDelegateExecuteProc*(): auto =
         isError: true,
         exitCode: 1,
       )
+    # Consume one delegation slot before spawning the child.
+    captured.delegationConfig.useDelegationSlot()
+
     let childResult = runAgentLoop(
       agentCfg = childCfg,
       llm = captured.llmClient,
@@ -696,24 +719,30 @@ proc cmdRunPersona*(
   setGlobalLLMClient(llm)
   setPersonaRegistry(reg)
 
-  # Build filtered registry scoped to the persona
+  # Build child agent config (must happen before registries so delegation
+  # bounds are available when the delegate tool is wired).
   let pc = reg.getPersona(personaName)
-  var baseReg = newToolRegistry()
-  baseReg.register(shellTool())
-  let scopedReg = scopedRegistry(baseReg, pc)
-
-  # Build child agent config
   var agentCfg = newAgentConfig(cfg)
   if pc.systemPrompt.len > 0:
     agentCfg.systemPrompt = pc.systemPrompt
   if pc.maxIterations > 0:
     agentCfg.maxIterations = pc.maxIterations
   agentCfg.persona = pc
-  agentCfg.delegation = applyPersonaDelegation(
+  let dc = applyPersonaDelegation(
     pc.maxDelegationDepth,
     pc.maxDelegationsPerRun,
     pc.name,
   )
+  agentCfg.delegation = dc
+  setDelegationConfig(dc)
+
+  # Build filtered registry scoped to the persona
+  var baseReg = newToolRegistry()
+  baseReg.register(shellTool())
+  # Register delegate tool so the LLM can spawn child agents.
+  if not gGlobals.isNil and gGlobals.llmClient.baseUrl.len > 0:
+    baseReg.register(makeDelegateTool())
+  let scopedReg = scopedRegistry(baseReg, pc)
 
   # Run the agent
   printSystemNote("spawning persona '" & personaName & "'...")

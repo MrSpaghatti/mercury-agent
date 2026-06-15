@@ -57,8 +57,6 @@ proc newPersonaRegistry*(): PersonaRegistry =
 
 proc applyPersonaDefaults(pc: var PersonaConfig) =
   ## Fills zero-value fields with safe defaults. Call before spawning.
-  if pc.memoryScope == msOwnSessions and pc.memoryScope == msOwnSessions:
-    discard  # already set
   if pc.memoryMaxHistory <= 0:
     pc.memoryMaxHistory = DefaultMemoryMaxHistory
   if pc.delegateEnabled == false:

@@ -18,6 +18,7 @@ import discord_types
 type
   McpServerConfig* = object
     ## Configuration for a single MCP server endpoint.
+    name*: string          ## Human-readable name from TOML section (e.g. "filesystem")
     url*: string
     authToken*: string
     timeoutMs*: int
@@ -117,7 +118,13 @@ type
 proc parseMcpServerEntry(entry: McpServerEntry): McpServerConfig =
   ## Converts a parsed `McpServerEntry` into a `McpServerConfig`, filling in
   ## any missing values with defaults. Strips trailing slashes from URL.
+  let name =
+    if entry.name.startsWith("mcp_servers."):
+      entry.name[12 .. ^1]  # strip "mcp_servers." prefix
+    else:
+      entry.name
   result = McpServerConfig(
+    name: name,
     url: if entry.url.len > 0: entry.url.strip(trailing = true, chars = {'/'})
          else: "http://localhost:8080/mcp",
     authToken: entry.authToken,

@@ -10,7 +10,7 @@
 ## `ToolExecuteProc` signature and can live inside a `ToolRegistry` without
 ## leaking exceptions to the agent loop.
 
-import std/[json]
+import std/[httpclient, json]
 
 import mercury_core/config
 import mercury_core/mcp_client
@@ -19,34 +19,6 @@ import mercury_core/tool_registry
 # ---------------------------------------------------------------------------
 # Internal helper
 # ---------------------------------------------------------------------------
-
-proc callMcpToolRaw(
-    client: McpClient;
-    toolName: string;
-    args: JsonNode;
-): ToolResult =
-  ## Internal helper that calls an MCP tool and converts errors to `ToolResult`.
-  try:
-    let output = client.callTool(toolName, args)
-    return ToolResult(output: output, isError: false, exitCode: 0)
-  except McpToolNotFoundError as e:
-    return ToolResult(
-      output: "tool not found on MCP server: " & e.msg,
-      isError: true,
-      exitCode: -1,
-    )
-  except McpError as e:
-    return ToolResult(
-      output: "MCP error: " & e.msg,
-      isError: true,
-      exitCode: -1,
-    )
-  except CatchableError as e:
-    return ToolResult(
-      output: "unexpected error calling MCP tool: " & e.msg,
-      isError: true,
-      exitCode: -1,
-    )
 
 # ---------------------------------------------------------------------------
 # Per-tool execute proc factory
@@ -74,9 +46,13 @@ proc makeMcpToolExecuteProc(
       ToolResult(output: "unexpected error calling MCP tool: " & e.msg,
                 isError: true, exitCode: -1)
     except Exception as e:
+      # catch-all for {.raises: [].} — wraps any remaining exceptions
+      # (including bare Exception) into tool errors.
       ToolResult(output: "internal error calling MCP tool: " & e.msg,
                 isError: true, exitCode: -1)
     except Defect as e:
+      # Required for {.raises: [].} — wraps fatal defects into tool errors
+      # so the agent loop doesn't crash. Matches shell tool pattern.
       ToolResult(output: "internal error calling MCP tool: " & e.msg,
                 isError: true, exitCode: -1)
 
@@ -87,7 +63,7 @@ proc makeMcpToolExecuteProc(
 proc registerMcpTool*(
     reg: ToolRegistry;
     mcpTool: McpTool;
-    client: var McpClient;
+    client: McpClient;
 ) =
   ## Registers a single `McpTool` into a `ToolRegistry` using the provided
   ## `McpClient` for execution. The tool's name is used as-is (no prefix).
@@ -113,7 +89,7 @@ proc registerMcpTool*(
 proc registerMcpTools*(
     reg: ToolRegistry;
     mcpTools: seq[McpTool];
-    client: var McpClient;
+    client: McpClient;
 ) =
   ## Registers all `McpTool` objects into a `ToolRegistry`. Uses the same
   ## `McpClient` for all tools (assumes they come from the same server).
@@ -151,6 +127,8 @@ proc registerMcpServer*(
   except CatchableError as e:
     stderr.writeLine("Warning: MCP server '" & serverCfg.url &
                      "' registration failed: " & e.msg)
+  finally:
+    client.http.close()
 
 proc registerMcpServers*(
     reg: ToolRegistry;
