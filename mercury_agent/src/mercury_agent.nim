@@ -167,9 +167,9 @@ proc setMercuryConfig*(cfg: MercuryConfig) =
 # Delegate tool
 # ---------------------------------------------------------------------------
 
-# Forward declaration needed because makeDelegateExecuteProc's closure
-# body references makeDelegateTool, which is defined later in the file.
+# Forward declarations for symbols defined later in the file.
 proc makeDelegateTool*(): Tool
+proc defaultPersonasPath*(): string
 
 proc makeDelegateParams*(): JsonNode =
   ## Builds the JSON Schema for the delegate tool parameters.
@@ -493,6 +493,17 @@ proc cmdChat*(
   except ConfigError as e:
     printError(e.msg); return 2
   let llm = buildLLMClient(cfg)
+
+  # Set agent globals so delegate tool can work from this flow.
+  setGlobalLLMClient(llm)
+  setMercuryConfig(cfg)
+  let personasPath = defaultPersonasPath()
+  let pReg =
+    if fileExists(personasPath): loadPersonasFile(personasPath)
+    else: newPersonaRegistry()
+  setPersonaRegistry(pReg)
+  setDelegationConfig(defaultDelegationConfig())
+
   let reg = buildRegistry(cfg)
   var mem = openMemory(cfg)
   defer: mem.close()
@@ -528,6 +539,17 @@ proc cmdAsk*(
   except ConfigError as e:
     printError(e.msg); return 2
   let llm = buildLLMClient(cfg)
+
+  # Set agent globals so delegate tool can work from this flow.
+  setGlobalLLMClient(llm)
+  setMercuryConfig(cfg)
+  let personasPath = defaultPersonasPath()
+  let pReg =
+    if fileExists(personasPath): loadPersonasFile(personasPath)
+    else: newPersonaRegistry()
+  setPersonaRegistry(pReg)
+  setDelegationConfig(defaultDelegationConfig())
+
   let reg = buildRegistry(cfg)
   var mem = openMemory(cfg)
   defer: mem.close()
@@ -590,6 +612,17 @@ proc cmdSession*(
   if not sessionExists(dbPath, sessionId):
     printError("no such session: " & sessionId); return 4
   let llm = buildLLMClient(cfg)
+
+  # Set agent globals so delegate tool can work from this flow.
+  setGlobalLLMClient(llm)
+  setMercuryConfig(cfg)
+  let personasPath = defaultPersonasPath()
+  let pReg =
+    if fileExists(personasPath): loadPersonasFile(personasPath)
+    else: newPersonaRegistry()
+  setPersonaRegistry(pReg)
+  setDelegationConfig(defaultDelegationConfig())
+
   let reg = buildRegistry(cfg)
   var mem = openMemory(cfg)
   defer: mem.close()
