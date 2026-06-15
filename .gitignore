@@ -51,6 +51,9 @@ mercury_code/tests/tcode_runner
 mercury_core/tests/mock_server
 mercury_core/tests/test_mcp_client
 mercury_core/tests/test_persona
+mercury_core/tests/mock_mcp_server
+mercury_core/tests/test_mcp_tool
+code2prompt-output.md
 mercury_core/tests/temp_test
 mercury_core/src/mercury_core/delegate
 mercury_core/src/mercury_core/persona
