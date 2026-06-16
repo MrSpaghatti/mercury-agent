@@ -20,11 +20,10 @@
 ##      token counts reported by the LLM.
 ##
 ## Out of scope (deferred):
-##   - Plan-Execute / sub-agent delegation
+##   - Plan-Execute
 ##   - Reflection / self-critique
 ##   - Streaming responses
 ##   - Vector memory / semantic retrieval
-##   - MCP, Discord, etc.
 
 import std/[json, strutils, tables]
 
