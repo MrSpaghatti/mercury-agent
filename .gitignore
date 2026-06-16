@@ -64,3 +64,6 @@ mercury_agent/tests/tdelegate_tool
 progress.md
 mercury_core/tests/test_daemon_delegation
 mercury_agent/tests/tbench
+
+# Legacy Sisyphus config (opencode → oh-my-pi migration)
+.sisyphus.legacy/
