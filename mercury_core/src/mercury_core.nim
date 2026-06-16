@@ -1,3 +1,12 @@
+## Mercury core library barrel re-export.
+##
+## Note: Most consumers import individual submodules directly
+## (e.g. `import mercury_core/config`). This barrel exists for
+## backward compatibility with the Discord-era module set.
+## New modules (config, llm_client, memory, tool_registry, mcp_*,
+## persona, delegate) are intentionally not re-exported here
+## because they are always imported explicitly.
+
 when isMainModule:
   discard
 
