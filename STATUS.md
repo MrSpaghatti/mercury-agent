@@ -89,6 +89,15 @@ AI agent with:
 cleanly on process exit. The test passes but hangs for ~2 seconds at
 shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
 
+### 🟡 Delegation slot accounting conflates depth and count
+
+`delegate.useDelegationSlot` decrements only `maxDepth`, so a sequence of
+non-nested delegations consumes nesting "depth" and `maxDelegationsPerRun`
+is never actually decremented. The effect is **fail-safe** (delegation stops
+sooner than configured, never later), so it is not a safety hole, but the two
+bounds are muddled and should be separated when the delegation semantics are
+revisited.
+
 ---
 
 ## Architecture
