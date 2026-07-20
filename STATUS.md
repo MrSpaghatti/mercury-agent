@@ -75,7 +75,7 @@ AI agent with:
 
 ---
 
-## Known Issues
+## Known Issues (Discovered during Code Audit)
 
 ### ~~🔴 SSL build failure with dimscord on Nim 2.2.10~~ ✅ Fixed
 

@@ -72,6 +72,8 @@ mercury/
 │   │                   # code_tool.nim, compile.nim, config.nims
 │   └── tests/          # tcode_runner (11 tests)
 ├── Makefile
+├── STATUS.md           # current state of the project
+├── AUDIT_REPORT.md     # deep dive audit report and next steps
 └── README.md           # this file
 ```
 
@@ -79,9 +81,10 @@ mercury/
 
 ### Prerequisites
 
-- Nim ≥ 2.0
+- Nim ≥ 2.0 (we use 2.2.10)
 - `nimble`
 - SQLite shared library (with FTS5 — included in standard SQLite ≥ 3.9)
+- OpenSSL dependencies (`libssl-dev`)
 
 ### Build
 
@@ -92,7 +95,7 @@ cd mercury_core   && nimble build
 cd mercury_agent  && nimble build
 ```
 
-### Configure
+## Further Reading
 
 Mercury looks for configuration in three places, **highest priority first**:
 
