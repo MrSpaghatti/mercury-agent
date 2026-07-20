@@ -70,7 +70,7 @@ mercury/
 ├── mercury_code/       # autonomous coding harness binary
 │   ├── src/            # mercury_code.nim, code_runner.nim,
 │   │                   # code_tool.nim, compile.nim, config.nims
-│   └── tests/          # tcode_runner (11 tests)
+│   └── tests/          # tcode_runner (25 tests)
 ├── Makefile
 ├── STATUS.md           # current state of the project
 ├── AUDIT_REPORT.md     # deep dive audit report and next steps

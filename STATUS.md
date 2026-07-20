@@ -1,6 +1,6 @@
 # Mercury Agent — Development Status
 
-**Last Updated**: June 14, 2026  
+**Last Updated**: July 19, 2026  
 **Project Path**: `/home/spag/mercury-agent`  
 **Phase**: 1 (Foundation) + Phase 2 (Discord Integration) — Complete
 
@@ -199,13 +199,15 @@ Near-term candidates (in priority order):
 1. **~~CI pipeline (P0)~~** ✅ — GitHub Actions running on Nim 2.0.8 and 2.2.2.
    Green CI badge on every push.
 2. **~~mercury_code package (P1)~~** ✅ — Autonomous coding harness with compile,
-   test, read_file, write_file tools. 11 tests pass.
-3. **MCP support (P2)** — ✅ Complete. 36 tests pass.
-4. **Persona + Delegation (P2)** — ✅ Complete. `persona.nim`, `delegate.nim`, persona-scoped `run` subcommand, agent-to-agent delegation within ReAct loop. 22 persona tests. Deep audit fixes committed.
-5. `mcp_client.nim` (HTTP/JSON-RPC
-   transport, initialize, tools/list, tools/call), `mcp_tool.nim` (tool
-   registration bridge), `McpServerConfig` added to `MercuryConfig`.
-   TOML `[mcp_servers.*]` and env-var config loading. 36 tests across
-   `test_mcp_client.nim` and `test_mcp_tool.nim` — all pass.
-   (SSE/streaming transport deferred as non-blocking.)
+   test, read_file, write_file tools. 25 tests pass.
+3. **~~MCP support (P2)~~** ✅ — HTTP/JSON-RPC transport via `mcp_client.nim`,
+   tool registration bridge via `mcp_tool.nim`, TOML `[mcp_servers.*]` +
+   env-var config loading. 36 tests pass across `test_mcp_client.nim` and
+   `test_mcp_tool.nim`. (SSE/streaming transport deferred.)
+4. **~~Persona + Delegation (P2)~~** ✅ — `persona.nim`, `delegate.nim`,
+   persona-scoped `run` subcommand, agent-to-agent delegation within ReAct
+   loop. 22 persona tests. Deep audit fixes committed.
+5. **~~Hardening pass (2026-07-19)~~** ✅ — Found & fixed 7 real bugs incl.
+   2 sandbox-escape issues, broken compile path, pipe deadlock, FTS5 crash,
+   and env-var test isolation. See CHANGELOG.
 6. **Web UI (P3)** — Lightweight HTTP chat frontend.

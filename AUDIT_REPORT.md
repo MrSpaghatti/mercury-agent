@@ -1,3 +1,11 @@
+> **Status (2026-07-19)**: Most findings below were resolved in the
+> hardening pass — see CHANGELOG `[Unreleased]`. Specifically: no
+> `dummy.nim` files remain; `file_path_validator.nim` uses `std/re`
+> (not `nre`); `asyncdispatch` imports are in place; `-d:ssl` is
+> enforced via `config.nims`. Remaining open questions: agent loop
+> location / dispatcher threading, SQLite WAL mode, and `discard`-ed
+> `CatchableError` instances.
+
 # Comprehensive Codebase Audit Report
 
 This report summarizes the findings from a deep dive into the `mercury` project (`mercury_core` and `mercury_agent`), including testing issues, architectural flaws, minor issues, and actionable next steps for future agent sessions.

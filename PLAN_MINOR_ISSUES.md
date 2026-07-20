@@ -1,3 +1,7 @@
+> **Status (2026-07-19)**: `dummy.nim` files (#2) and the `-d:ssl`
+> `config.nims` item (#5) are resolved. Items #1 (discard/unused
+> imports cleanup), #3 (TODOs), and #4 (config edge cases) remain open.
+
 # Minor Issues & Bad Practices Plan
 
 1. **Remove Empty Discards and Unused Imports:**

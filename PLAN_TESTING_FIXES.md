@@ -1,3 +1,8 @@
+> **Status (2026-07-19)**: Items #1 (`asyncdispatch` imports), #2
+> (channel assertion), #3 (PCRE/nre — now uses `std/re`), #4
+> (`-d:ssl` in nimble + `config.nims`), and #5 (`raiseSSLError`)
+> are all resolved. See CHANGELOG `[Unreleased]`.
+
 # Testing Fixes Plan
 
 1. **Fix `waitFor` Macro Usage:**
