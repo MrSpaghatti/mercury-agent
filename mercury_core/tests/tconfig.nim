@@ -24,6 +24,19 @@ template withEnv(key, val: string; body: untyped) =
     else:
       delEnv(key)
 
+template withoutEnv(key: string; body: untyped) =
+  ## Temporarily unsets an environment variable, then restores the original.
+  ## Needed so .env-file precedence tests are not shadowed by an OS env var
+  ## that a developer happens to have set (e.g. a real OPENROUTER_API_KEY).
+  let oldVal = getEnv(key)
+  let hadOldVal = existsEnv(key)
+  delEnv(key)
+  try:
+    body
+  finally:
+    if hadOldVal:
+      putEnv(key, oldVal)
+
 # ---------------------------------------------------------------------------
 # Suite: defaultConfig
 # ---------------------------------------------------------------------------
@@ -186,31 +199,34 @@ suite "loadConfig .env overrides":
     removeDir(tmpDir)
 
   test "loads OPENROUTER_API_KEY from .env":
-    let envFile = tmpDir / ".env"
-    writeTempFile(envFile, "OPENROUTER_API_KEY=sk-test-key\n")
-    let cfg = loadConfig(
-      configPath = "/nonexistent/config.toml",
-      envFilePath = envFile
-    )
-    check cfg.openrouterApiKey == "sk-test-key"
+    withoutEnv("OPENROUTER_API_KEY"):
+      let envFile = tmpDir / ".env"
+      writeTempFile(envFile, "OPENROUTER_API_KEY=sk-test-key\n")
+      let cfg = loadConfig(
+        configPath = "/nonexistent/config.toml",
+        envFilePath = envFile
+      )
+      check cfg.openrouterApiKey == "sk-test-key"
 
   test "loads MERCURY_PROVIDER from .env":
-    let envFile = tmpDir / ".env"
-    writeTempFile(envFile, "MERCURY_PROVIDER=vllm\n")
-    let cfg = loadConfig(
-      configPath = "/nonexistent/config.toml",
-      envFilePath = envFile
-    )
-    check cfg.provider == "vllm"
+    withoutEnv("MERCURY_PROVIDER"):
+      let envFile = tmpDir / ".env"
+      writeTempFile(envFile, "MERCURY_PROVIDER=vllm\n")
+      let cfg = loadConfig(
+        configPath = "/nonexistent/config.toml",
+        envFilePath = envFile
+      )
+      check cfg.provider == "vllm"
 
   test "loads MERCURY_VLLM_ENDPOINT from .env":
-    let envFile = tmpDir / ".env"
-    writeTempFile(envFile, "MERCURY_VLLM_ENDPOINT=http://10.0.0.1:8000/v1\n")
-    let cfg = loadConfig(
-      configPath = "/nonexistent/config.toml",
-      envFilePath = envFile
-    )
-    check cfg.vllmEndpoint == "http://10.0.0.1:8000/v1"
+    withoutEnv("MERCURY_VLLM_ENDPOINT"):
+      let envFile = tmpDir / ".env"
+      writeTempFile(envFile, "MERCURY_VLLM_ENDPOINT=http://10.0.0.1:8000/v1\n")
+      let cfg = loadConfig(
+        configPath = "/nonexistent/config.toml",
+        envFilePath = envFile
+      )
+      check cfg.vllmEndpoint == "http://10.0.0.1:8000/v1"
 
 # ---------------------------------------------------------------------------
 # Suite: loadConfig — environment variable overrides

@@ -402,9 +402,16 @@ db_path=/tmp/mercury-integration.db
 
     putEnv("MERCURY_MAX_TOKENS", "555")
     putEnv("MERCURY_PROVIDER", "openrouter")
+    # Clear any real OPENROUTER_API_KEY from the OS env so it does not shadow
+    # the .env file value under test (OS env has higher precedence than .env).
+    let hadApiKey = existsEnv("OPENROUTER_API_KEY")
+    let oldApiKey = getEnv("OPENROUTER_API_KEY")
+    delEnv("OPENROUTER_API_KEY")
     defer:
       delEnv("MERCURY_MAX_TOKENS")
       delEnv("MERCURY_PROVIDER")
+      if hadApiKey:
+        putEnv("OPENROUTER_API_KEY", oldApiKey)
 
     let cfg = loadConfig(configPath = cfgFile, envFilePath = envFile)
     # env var beats TOML
