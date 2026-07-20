@@ -30,6 +30,8 @@
 ##   - output streaming / size caps (we currently return everything)
 
 import std/[json, osproc, streams, strutils, times, os, monotimes]
+when defined(posix):
+  import std/posix
 
 import mercury_core/tool_registry
 
@@ -139,11 +141,13 @@ proc isDenied*(cmd: string; patterns: seq[string]): bool =
 # Process execution with timeout
 # ---------------------------------------------------------------------------
 
-proc clampOutput(s: string; maxBytes: int): string =
-  if maxBytes <= 0 or s.len <= maxBytes:
-    return s
-  result = s[0 ..< maxBytes]
-  result.add("\n... [truncated " & $(s.len - maxBytes) & " bytes]")
+proc finalizeCapture(buf: string; total, cap: int): string =
+  ## `buf` already holds at most `cap` captured bytes; `total` is the number
+  ## of bytes actually produced. Appends a truncation notice if we dropped any.
+  if cap <= 0 or total <= cap:
+    return buf
+  result = buf
+  result.add("\n... [truncated " & $(total - cap) & " bytes]")
 
 proc readAllAvailable(stream: Stream): string =
   ## Reads everything currently buffered on the stream. Returns "" on error.
@@ -154,6 +158,35 @@ proc readAllAvailable(stream: Stream): string =
     result = stream.readAll()
   except CatchableError:
     discard
+
+when defined(posix):
+  proc setNonBlocking(fd: FileHandle) =
+    ## Best-effort: put the pipe read end into non-blocking mode so we can
+    ## drain it without blocking the poll loop.
+    let flags = fcntl(fd.cint, F_GETFL)
+    if flags != -1:
+      discard fcntl(fd.cint, F_SETFL, flags or O_NONBLOCK)
+
+  proc drainAvailable(fd: FileHandle; buf: var string; total: var int;
+                      cap: int): bool =
+    ## Reads all bytes currently available on `fd` (a non-blocking pipe),
+    ## appending up to `cap` total bytes into `buf` and counting every byte
+    ## produced in `total`. Bytes past the cap are read and discarded so the
+    ## child process never blocks on a full pipe. Returns true once EOF is
+    ## reached (the write end has been closed).
+    var tmp {.noinit.}: array[8192, char]
+    while true:
+      let n = read(fd.cint, addr tmp[0], tmp.len)
+      if n == 0:
+        return true            # EOF: writer closed
+      if n < 0:
+        return false           # EAGAIN/EWOULDBLOCK (or error): nothing more now
+      total += n
+      if cap <= 0 or buf.len < cap:
+        let take = if cap <= 0: n else: min(n, cap - buf.len)
+        let oldLen = buf.len
+        buf.setLen(oldLen + take)
+        copyMem(addr buf[oldLen], addr tmp[0], take)
 
 proc runShellRaw(cmd: string; opts: ShellOptions): ShellExecution =
   ## Runs `cmd` via the configured shell with a timeout. Captures stdout
@@ -191,31 +224,70 @@ proc runShellRaw(cmd: string; opts: ShellOptions): ShellExecution =
   let timeoutMs = if opts.timeoutMs <= 0: DefaultShellTimeoutMs
                   else: min(opts.timeoutMs, MaxShellTimeoutMs)
   let deadline = startMono + initDuration(milliseconds = timeoutMs)
+  let cap = opts.maxOutputBytes
   var timedOut = false
-  var pollIntervalMs = 25
-  while true:
-    let rc = process.peekExitCode()
-    if rc != -1:
-      break
-    if getMonoTime() >= deadline:
-      timedOut = true
-      try:
-        process.kill()
-      except CatchableError:
-        discard
-      # Give it a brief grace period to die.
-      var graceLeft = 500
-      while graceLeft > 0 and process.peekExitCode() == -1:
-        sleep(25)
-        graceLeft -= 25
-      try:
-        process.terminate()
-      except CatchableError:
-        discard
-      break
-    sleep(pollIntervalMs)
-    if pollIntervalMs < 100:
-      pollIntervalMs += 5
+  var outBuf, errBuf = ""
+  var outTotal, errTotal = 0
+
+  when defined(posix):
+    # Drain stdout/stderr incrementally so a command that produces more than
+    # one pipe buffer (~64 KiB) of output does not deadlock: without this the
+    # child blocks writing to a full pipe, never exits, and is falsely killed
+    # as a timeout with its output lost.
+    setNonBlocking(process.outputHandle)
+    setNonBlocking(process.errorHandle)
+    var outEof, errEof = false
+    var pollIntervalMs = 25
+    while true:
+      if not outEof: outEof = drainAvailable(process.outputHandle, outBuf, outTotal, cap)
+      if not errEof: errEof = drainAvailable(process.errorHandle, errBuf, errTotal, cap)
+      if process.peekExitCode() != -1:
+        break
+      if getMonoTime() >= deadline:
+        timedOut = true
+        try: process.kill() except CatchableError: discard
+        var graceLeft = 500
+        while graceLeft > 0 and process.peekExitCode() == -1:
+          if not outEof: outEof = drainAvailable(process.outputHandle, outBuf, outTotal, cap)
+          if not errEof: errEof = drainAvailable(process.errorHandle, errBuf, errTotal, cap)
+          sleep(25)
+          graceLeft -= 25
+        try: process.terminate() except CatchableError: discard
+        break
+      sleep(pollIntervalMs)
+      if pollIntervalMs < 100:
+        pollIntervalMs += 5
+    # Final drain now that the write end is closed, to collect the tail.
+    var guard = 0
+    while (not outEof or not errEof) and guard < 100_000:
+      if not outEof: outEof = drainAvailable(process.outputHandle, outBuf, outTotal, cap)
+      if not errEof: errEof = drainAvailable(process.errorHandle, errBuf, errTotal, cap)
+      inc guard
+  else:
+    # Non-POSIX fallback: poll for exit, then read once. Subject to the
+    # pipe-buffer limitation above, but Mercury targets POSIX.
+    var pollIntervalMs = 25
+    while true:
+      if process.peekExitCode() != -1:
+        break
+      if getMonoTime() >= deadline:
+        timedOut = true
+        try: process.kill() except CatchableError: discard
+        var graceLeft = 500
+        while graceLeft > 0 and process.peekExitCode() == -1:
+          sleep(25)
+          graceLeft -= 25
+        try: process.terminate() except CatchableError: discard
+        break
+      sleep(pollIntervalMs)
+      if pollIntervalMs < 100:
+        pollIntervalMs += 5
+    let outRaw = readAllAvailable(process.outputStream)
+    let errRaw = readAllAvailable(process.errorStream)
+    outTotal = outRaw.len
+    errTotal = errRaw.len
+    outBuf = if cap > 0 and outRaw.len > cap: outRaw[0 ..< cap] else: outRaw
+    errBuf = if cap > 0 and errRaw.len > cap: errRaw[0 ..< cap] else: errRaw
 
   var exitCode = 0
   try:
@@ -223,23 +295,18 @@ proc runShellRaw(cmd: string; opts: ShellOptions): ShellExecution =
   except CatchableError:
     exitCode = -1
 
-  let stdoutRaw = readAllAvailable(process.outputStream)
-  let stderrRaw = readAllAvailable(process.errorStream)
   try: process.close() except CatchableError: discard
 
   result = ShellExecution(
-    stdout: clampOutput(stdoutRaw, opts.maxOutputBytes),
-    stderr: clampOutput(stderrRaw, opts.maxOutputBytes),
+    stdout: finalizeCapture(outBuf, outTotal, cap),
+    stderr: finalizeCapture(errBuf, errTotal, cap),
     exitCode: exitCode,
     timedOut: timedOut,
     denied: false,
     durationMs: int((getMonoTime() - startMono).inMilliseconds),
   )
   if timedOut:
-    let suffix = "\n... [killed: timeout after " & $timeoutMs & "ms]"
-    if result.stderr.len + suffix.len <= max(opts.maxOutputBytes, 1024) or
-       opts.maxOutputBytes <= 0:
-      result.stderr.add(suffix)
+    result.stderr.add("\n... [killed: timeout after " & $timeoutMs & "ms]")
 
 proc runShell*(cmd: string; opts: ShellOptions): ShellExecution =
   ## Public entry point: enforces the deny-list, then runs the command.

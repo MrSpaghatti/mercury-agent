@@ -109,6 +109,34 @@ suite "shell tool execution":
     check res.isError
     check res.output.contains("'cmd'")
 
+  test "large output does not deadlock (exceeds one pipe buffer)":
+    # `seq 1 200000` produces well over the ~64 KiB pipe buffer. Before the
+    # incremental-drain fix the child blocked on a full pipe, never exited,
+    # and was killed as a false timeout. It must now complete normally.
+    let exec = runShell("seq 1 200000", fastShellOpts())
+    check (not exec.timedOut)
+    check (not exec.denied)
+    check exec.exitCode == 0
+    check exec.stdout.startsWith("1\n")
+
+  test "output past the cap is truncated with a notice":
+    var opts = fastShellOpts()
+    opts.maxOutputBytes = 4096
+    let exec = runShell("seq 1 200000", opts)
+    check (not exec.timedOut)
+    check exec.exitCode == 0
+    check exec.stdout.contains("[truncated")
+    # Captured payload stays near the cap (plus the short notice).
+    check exec.stdout.len < 4096 + 64
+
+  test "large stdout and stderr together do not deadlock":
+    let exec = runShell(
+      "seq 1 100000; seq 1 100000 1>&2", fastShellOpts())
+    check (not exec.timedOut)
+    check exec.exitCode == 0
+    check exec.stdout.len > 0
+    check exec.stderr.len > 0
+
 # ---------------------------------------------------------------------------
 # Timeout
 # ---------------------------------------------------------------------------
