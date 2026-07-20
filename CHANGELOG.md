@@ -5,6 +5,46 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Security — coding-harness file tools ignored the sandbox root.**
+  `read_file` / `write_file` in `mercury_code/code_tool.nim` documented
+  operating "within the sandbox" (and the CLI refuses to start without
+  `MERCURY_SANDBOX_ROOT`), but never enforced it — extension-less paths
+  bypassed even the extension filter, letting a model read/write anywhere
+  (`/etc/passwd`, `~/.ssh/*`, …). Added `withinSandbox` (symlink/`..`-resolving,
+  `/`-boundary, fail-closed) and gated both tools on it.
+- **Security — sandbox escape via sibling-prefix path.**
+  `file_path_validator.validatePath` used `startsWith(sandbox)`, so
+  `/home/u/sandbox-evil/…` passed the check for a `/home/u/sandbox` sandbox.
+  Now requires an exact match or a `/` boundary.
+- **`mercury_code` could not run any real build/test command.** `runCompile`
+  called `startProcess` without `poEvalCommand`, so multi-word commands like
+  `nim c -r src/main.nim` were treated as a single executable name and failed
+  to launch. Added `poEvalCommand`.
+- **Shell / compile output deadlock on large output.** `tools/shell.nim` and
+  `mercury_code/compile.nim` read the child's pipe only after it exited, so any
+  command emitting more than one pipe buffer (~64 KiB) blocked forever and was
+  killed as a false timeout. Both now drain incrementally (non-blocking) on
+  POSIX, capping stored output.
+- **Search crashed on ordinary text.** `memory.searchHistory` passed the raw
+  query to FTS5 `MATCH`; inputs like `rm -rf`, `foo:bar`, or a lone quote raised
+  an uncaught `DbError`. Now retries as a sanitized literal query and returns no
+  results rather than raising.
+- **`file_write` permission bypass.** `file_tool` checked `canUseTool(…,
+  "write_file", …)` while the tool registers as `file_write`, so an explicit
+  `tools.deny = ["file_write"]` was silently ignored. Fixed the name.
+- **Compiler-output parser crash.** `parseNimCompilerOutput` ran `parseInt` on
+  any `word(...)` line unguarded, so captured output like `assert(x == y)` raised
+  a `ValueError`. Now skips non-numeric locations like the legacy parser.
+- **Config test isolation.** `.env`-precedence tests in `tconfig.nim` /
+  `tintegration.nim` didn't clear the matching OS env var, so the suite failed on
+  machines that export `OPENROUTER_API_KEY`.
+
+Regression tests were added for every item above (460 tests total, 0 failures).
+
 ## [0.1.0] — 2026-05-30
 
 Initial release covering the completed foundation phases.

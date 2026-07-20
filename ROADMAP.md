@@ -39,7 +39,7 @@ All 3 packages (`mercury_core`, `mercury_agent`, `mercury_code`) build and test 
 
 | Package | Test Files | Tests | Status |
 |---------|-----------|-------|--------|
-| mercury_core | 22 | ~350 | ✅ All pass |
-| mercury_agent | 6 | ~79 | ✅ All pass |
-| mercury_code | 1 | 11 | ✅ All pass |
-| **Total** | **29** | **~441** | **✅ 0 FAILED** |
+| mercury_core | 22 | 355 | ✅ All pass |
+| mercury_agent | 6 | 82 | ✅ All pass |
+| mercury_code | 1 | 23 | ✅ All pass |
+| **Total** | **29** | **460** | **✅ 0 FAILED** |
