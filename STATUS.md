@@ -1,8 +1,8 @@
 # Mercury Agent — Development Status
 
-**Last Updated**: July 19, 2026  
-**Project Path**: `/home/spag/mercury-agent`  
-**Phase**: 1 (Foundation) + Phase 2 (Discord Integration) — Complete
+**Last Updated**: July 20, 2026
+**Project Path**: `/home/spag/mercury-agent`
+**Phase**: Phase 1+2 complete. Tasks 1, 2, 3, & 4 (of 7) done.
 
 ---
 
@@ -15,9 +15,12 @@ AI agent with:
 - **Discord daemon** (DI-based bot with permissions, threads, file tools)
 - **Persistent memory** (SQLite + FTS5 full-text search)
 - **ReAct loop** with loop detection, error recovery, and configurable limits
+- **Streaming responses** (SSE) — token-by-token CLI output via `chatCompletionStream`;
+  Discord progressive edits deferred (requires threading)
+- **Web UI** — single-page chat interface served via `mercury_agent web`,
+  with session browsing, full-text search, and chat via REST API
 - **Tool system** with sandboxed shell, file read/write, permission checks,
-  rate limiting, message chunking
-
+  MCP client bridge, and persona-scoped agent delegation
 ---
 
 ## Completed
@@ -103,19 +106,20 @@ revisited.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────┐
 │                    mercury_agent (CLI)                    │
 │  ┌──────────┐  ┌──────────────┐  ┌──────────────────┐   │
-│  │ cligen   │  │ agent_loop   │  │ tools/shell.nim  │   │
-│  │ dispatch │──▶ (ReAct loop) │──▶ (sandboxed shell) │   │
-│  └──────────┘  └──────┬───────┘  └──────────────────┘   │
+│  │ cligen   │  │ mercury_core │  │ tools/shell.nim  │   │
+│  │ dispatch │──▶│ agent_loop   │──▶ (sandboxed shell)│   │
+│  └──────────┘  │ (ReAct loop) │  └──────────────────┘   │
+│                └──────┬───────┘                           │
 │                       │                                   │
 │  ┌─────────────────────┐   ┌─────────────────────────┐   │
 │  │ mercury_core/       │   │ mercury_core/           │   │
 │  │ llm_client.nim      │   │ memory.nim (SQLite+FTS5)│   │
 │  │ config.nim          │   │ tool_registry.nim       │   │
 │  └─────────────────────┘   └─────────────────────────┘   │
-├─────────────────────────────────────────────────────────┤
+├──────────────────────────────────────────────────────────┤
 │                 mercury_agent (Daemon)                    │
 │  ┌──────────────────────────────────────────────────┐   │
 │  │ dimscord ─▶ discord_bridge ─▶ discord.nim         │   │
@@ -125,16 +129,16 @@ revisited.
 │  │              discord_commands.nim                    │   │
 │  │                    │                                 │   │
 │  │                    ▼                                 │   │
-│  │              agent_dispatcher.nim ─▶ agent_loop      │   │
+│  │  agent_dispatcher.nim ─▶ mercury_core/agent_loop    │   │
 │  └──────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Files by Layer
 
-### mercury_core (18 modules)
+### mercury_core (19 modules)
 | File | Role |
 |------|------|
 | `config.nim` | Layered config (TOML + .env + env vars) |
@@ -142,13 +146,14 @@ revisited.
 | `token_counter.nim` | Heuristic token estimation |
 | `memory.nim` | SQLite + FTS5 persistence |
 | `tool_registry.nim` | Named tool registration + JSON schema export |
+| `agent_loop.nim` | ReAct loop: LLM → tool → loop |
 | `build_llm_client.nim` | MercuryConfig → LLMClient builder |
 | `discord.nim` | DI-based Discord bot |
 | `discord_bridge.nim` | Real Discord API adapter (Dimscord) |
 | `discord_commands.nim` | Bot command handlers |
 | `discord_types.nim` | Shared Discord types |
 | `discord_mocks.nim` | Mock API for offline testing |
-| `agent_dispatcher.nim` | Async agent request queue |
+| `agent_dispatcher.nim` | Async agent request queue → agent_loop |
 | `permission.nim` | User/tool permission evaluation |
 | `file_path_validator.nim` | Path traversal protection |
 | `file_tool.nim` | File read/write agent tools |
@@ -156,12 +161,10 @@ revisited.
 | `rate_limit.nim` | Per-user token bucket rate limiter |
 | `thread_mapping.nim` | Discord→agent thread persistence |
 
-### mercury_agent (5 modules)
+### mercury_agent (3 modules)
 | File | Role |
 |------|------|
 | `mercury_agent.nim` | CLI entry point + subcommand dispatch |
-| `agent_loop.nim` | ReAct loop: LLM → tool → loop |
-| `build_llm_client.nim` | MercuryConfig → LLMClient builder |
 | `tools/shell.nim` | Sandboxed shell tool with deny-list, timeout |
 | `tools/` | Tool implementations directory |
 
@@ -193,21 +196,20 @@ revisited.
 
 ## Next Steps
 
-See `.sisyphus/plans/roadmap.md` for the detailed project roadmap.
-Near-term candidates (in priority order):
+Seven long-horizon tasks planned. Detailed specs in `plans/task-*.md`.
+See [ROADMAP.md](ROADMAP.md) for the tracking table and execution order.
 
-1. **~~CI pipeline (P0)~~** ✅ — GitHub Actions running on Nim 2.0.8 and 2.2.2.
-   Green CI badge on every push.
-2. **~~mercury_code package (P1)~~** ✅ — Autonomous coding harness with compile,
-   test, read_file, write_file tools. 25 tests pass.
-3. **~~MCP support (P2)~~** ✅ — HTTP/JSON-RPC transport via `mcp_client.nim`,
-   tool registration bridge via `mcp_tool.nim`, TOML `[mcp_servers.*]` +
-   env-var config loading. 36 tests pass across `test_mcp_client.nim` and
-   `test_mcp_tool.nim`. (SSE/streaming transport deferred.)
-4. **~~Persona + Delegation (P2)~~** ✅ — `persona.nim`, `delegate.nim`,
-   persona-scoped `run` subcommand, agent-to-agent delegation within ReAct
-   loop. 22 persona tests. Deep audit fixes committed.
-5. **~~Hardening pass (2026-07-19)~~** ✅ — Found & fixed 7 real bugs incl.
-   2 sandbox-escape issues, broken compile path, pipe deadlock, FTS5 crash,
-   and env-var test isolation. See CHANGELOG.
-6. **Web UI (P3)** — Lightweight HTTP chat frontend.
+### ✅ Done
+
+1. **Task 1 — Agent Loop + Dispatcher** — `agent_loop.nim` moved to `mercury_core`,
+   SQLite WAL + busy_timeout in `memory.nim`, dispatcher wired to real `AgentResult`.
+2. **Task 4 — Code Quality** — silent CatchableError discards logged, dead code removed,
+   OpenRouter API key warning, TODO comments updated.
+3. **Task 2 — Streaming** — SSE streaming via `chatCompletionStream` in `llm_client.nim`,
+   `streamCallback` in `AgentConfig`, token-by-token CLI output, `--no-stream` flag.
+   Discord progressive edits deferred (blocked on dimscord `--threads:on`).
+4. **Task 3 — Web UI** — `mercury_agent web` subcommand, `web_server.nim` with
+   asynchttpserver, SPA with session search/listing, chat via `/api/chat`.
+   SSE streaming deferred (asynchttpserver limitation).
+
+### Remaining (recommended order)

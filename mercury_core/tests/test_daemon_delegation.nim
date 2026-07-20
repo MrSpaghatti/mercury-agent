@@ -1,5 +1,6 @@
 import unittest, asyncdispatch, options
 import mercury_core/agent_dispatcher
+import mercury_core/agent_loop
 import mercury_core/discord_types
 import mercury_core/config
 import mercury_core/llm_client
@@ -17,15 +18,14 @@ suite "daemon delegation config":
 
 suite "agent dispatcher with runFn":
   test "dispatcher with runFn produces result via callback":
-    var received: AgentResult
-    let cb = proc(r: AgentResult) {.gcsafe, closure, raises: [].} =
+    var received: agent_dispatcher.AgentResult
+    let cb = proc(r: agent_dispatcher.AgentResult) {.gcsafe, closure, raises: [].} =
       received = r
 
     let runFn = proc(cfg: MercuryConfig; llm: LLMClient; reg: ToolRegistry;
-                      dbPath, userInput: string): AgentLoopResult {.gcsafe, raises: [].} =
-      AgentLoopResult(
-        responseText: "hello from agent",
-        error: none[string](),
+                      dbPath, userInput: string): agent_loop.AgentResult {.gcsafe, raises: [].} =
+      agent_loop.AgentResult(
+        text: "hello from agent",
         sessionId: "sess_daemon"
       )
 
@@ -41,17 +41,16 @@ suite "agent dispatcher with runFn":
     check received.error.isNone
     check received.channelId == "chan_1"
 
-  test "dispatcher with runFn propagates error":
-    var received: AgentResult
-    let cb = proc(r: AgentResult) {.gcsafe, closure, raises: [].} =
+  test "dispatcher with runFn propagates error via stopReason":
+    var received: agent_dispatcher.AgentResult
+    let cb = proc(r: agent_dispatcher.AgentResult) {.gcsafe, closure, raises: [].} =
       received = r
 
     let runFn = proc(cfg: MercuryConfig; llm: LLMClient; reg: ToolRegistry;
-                      dbPath, userInput: string): AgentLoopResult {.gcsafe, raises: [].} =
-      AgentLoopResult(
-        responseText: "",
-        error: some("something went wrong"),
-        sessionId: ""
+                      dbPath, userInput: string): agent_loop.AgentResult {.gcsafe, raises: [].} =
+      agent_loop.AgentResult(
+        text: "",
+        stopReason: asrError
       )
 
     let dispatcher = newAgentDispatcher(cb, runFn, defaultConfig(), LLMClient(), newToolRegistry(), ":memory:")
@@ -64,22 +63,20 @@ suite "agent dispatcher with runFn":
     waitFor dispatchAgent(dispatcher, request)
     check received.responseText == ""
     check received.error.isSome
-    check received.error.get() == "something went wrong"
     check received.channelId == "chan_2"
 
   test "dispatcher with runFn passes config and userInput":
     var capturedCfg: MercuryConfig
     var capturedInput: string
 
-    let cb = proc(r: AgentResult) {.gcsafe, closure, raises: [].} = discard
+    let cb = proc(r: agent_dispatcher.AgentResult) {.gcsafe, closure, raises: [].} = discard
 
     let runFn = proc(cfg: MercuryConfig; llm: LLMClient; reg: ToolRegistry;
-                      dbPath, userInput: string): AgentLoopResult {.gcsafe, raises: [].} =
+                      dbPath, userInput: string): agent_loop.AgentResult {.gcsafe, raises: [].} =
       capturedCfg = cfg
       capturedInput = userInput
-      AgentLoopResult(
-        responseText: "ok",
-        error: none[string](),
+      agent_loop.AgentResult(
+        text: "ok",
         sessionId: "sess_3"
       )
 
@@ -96,14 +93,13 @@ suite "agent dispatcher with runFn":
   test "callback receives result synchronously":
     var resultReceived = false
 
-    let cb = proc(r: AgentResult) {.gcsafe, closure, raises: [].} =
+    let cb = proc(r: agent_dispatcher.AgentResult) {.gcsafe, closure, raises: [].} =
       resultReceived = true
 
     let runFn = proc(cfg: MercuryConfig; llm: LLMClient; reg: ToolRegistry;
-                      dbPath, userInput: string): AgentLoopResult {.gcsafe, raises: [].} =
-      AgentLoopResult(
-        responseText: "sync",
-        error: none[string](),
+                      dbPath, userInput: string): agent_loop.AgentResult {.gcsafe, raises: [].} =
+      agent_loop.AgentResult(
+        text: "sync",
         sessionId: "sess_4"
       )
 

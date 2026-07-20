@@ -30,7 +30,7 @@ import mercury_core/config
 import mercury_core/tool_registry
 import mercury_core/build_llm_client
 import mercury_core/memory
-import agent_loop
+import mercury_core/agent_loop
 import mercury_code/code_runner
 import mercury_code/code_tool
 

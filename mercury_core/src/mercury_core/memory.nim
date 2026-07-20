@@ -44,6 +44,13 @@ type
     snippet*: string          ## FTS5 snippet (may equal content for short msgs)
     createdAt*: string
 
+  SessionSummary* = object
+    ## Lightweight session metadata for listing.
+    id*: string
+    createdAt*: string
+    updatedAt*: string
+    messageCount*: int
+
   MemoryError* = object of CatchableError
     ## Raised on unrecoverable database errors.
 
@@ -192,6 +199,7 @@ proc newMemory*(path: string = ":memory:"): Memory =
   ## Pass ":memory:" for an in-memory database (useful for tests).
   let db = open(path, "", "", "")
   db.exec(sql"PRAGMA journal_mode=WAL")
+  db.exec(sql"PRAGMA busy_timeout=5000")
   db.exec(sql"PRAGMA foreign_keys=ON")
   initSchema(db)
   result = Memory(db: db)
@@ -320,6 +328,23 @@ proc searchHistory*(m: Memory; query: string): seq[SearchResult] =
       return runFtsSearch(m, sanitized)
     except DbError:
       return @[]
+
+proc listSessions*(m: Memory; limit: int = 50): seq[SessionSummary] =
+  ## Returns the most recently updated sessions, up to `limit`.
+  result = @[]
+  for row in m.db.fastRows(sql"""
+    SELECT s.id, s.created_at, s.updated_at,
+           (SELECT COUNT(*) FROM messages ms WHERE ms.session_id = s.id)
+    FROM sessions s
+    ORDER BY s.updated_at DESC
+    LIMIT ?
+  """, $limit):
+    result.add(SessionSummary(
+      id: row[0],
+      createdAt: row[1],
+      updatedAt: row[2],
+      messageCount: parseInt(row[3]),
+    ))
 
 proc getTokenUsage*(m: Memory; sessionId: string): TokenUsage =
   ## Returns aggregated token counts for all messages in `sessionId`.

@@ -55,6 +55,7 @@ mercury/
 ├── mercury_core/       # shared library
 │   ├── src/            # config, llm_client, memory,
 │   │                   # tool_registry, token_counter,
+│   │                   # agent_loop.nim (ReAct loop),
 │   │                   # discord.nim (DI bot),
 │   │                   # discord_bridge, discord_commands,
 │   │                   # discord_types, discord_mocks,
@@ -64,13 +65,12 @@ mercury/
 │   │                   # thread_mapping, build_llm_client
 │   └── tests/          # 20+ test files covering all modules
 ├── mercury_agent/      # CLI binary (mercury_agent.nim,
-│   ├── src/            # agent_loop.nim, tools/shell.nim,
-│   │                   # build_llm_client.nim)
+│   ├── src/            # tools/shell.nim)
 │   └── tests/          # tagent_loop, tcli, tintegration, test_shell_tool
 ├── mercury_code/       # autonomous coding harness binary
 │   ├── src/            # mercury_code.nim, code_runner.nim,
 │   │                   # code_tool.nim, compile.nim, config.nims
-│   └── tests/          # tcode_runner (25 tests)
+│   └── tests/          # tcode_runner (23 tests)
 ├── Makefile
 ├── STATUS.md           # current state of the project
 ├── AUDIT_REPORT.md     # deep dive audit report and next steps
@@ -161,6 +161,8 @@ Subcommands:
                           (new turns go to a new session).
   history                 List most recently updated sessions.
   search <query>          FTS5 search across stored messages.
+  run <persona> <task>    Run a named persona with a given task.
+  web                     Start the web UI HTTP server (blocking).
   daemon                  Start the Discord bot daemon (blocking).
 
 Common options (chat / ask / session):
@@ -193,6 +195,7 @@ the full list.
 | `temperature`         | `MERCURY_TEMPERATURE`         | `0.3`                                        | Sampling temperature in `[0, 2]`.                |
 | `max_loop_iterations` | `MERCURY_MAX_LOOP_ITERATIONS` | `10`                                         | Hard cap on ReAct iterations per query.          |
 | `db_path`             | `MERCURY_DB_PATH`             | `~/.local/share/mercury/mercury.db`          | SQLite database path. `~` expands to `$HOME`.    |
+| `web_port`            | `MERCURY_WEB_PORT`            | `8080`                                       | Port for the web UI HTTP server.                 |
 | `discord.token_env`   | `DISCORD_BOT_TOKEN`           | `DISCORD_BOT_TOKEN`                          | Env var holding the Discord bot token.          |
 | `discord.prefix`      | `DISCORD_PREFIX`              | `!`                                          | Command prefix for bot commands.                |
 | `discord.admins.allow`| (TOML only)                   | `[]`                                         | Discord user IDs with admin privileges.         |
@@ -213,6 +216,7 @@ want to export those variables globally.
 | `llm_client.nim`    | Synchronous OpenAI-compatible Chat Completions client with retry/error types.   |
 | `tool_registry.nim` | Named registry of tools; serializes to OpenAI `tools` array; safe execution.    |
 | `memory.nim`        | SQLite + FTS5: sessions, messages, full-text search, token-usage aggregation.   |
+| `agent_loop.nim`    | ReAct loop: build prompt, call LLM, dispatch tool calls, log to memory.         |
 | `token_counter.nim` | Cheap heuristic token counter used to size requests.                            |
 
 ### `mercury_core/` — Discord & Agent Infrastructure
@@ -237,9 +241,8 @@ want to export those variables globally.
 
 | Module                  | Responsibility                                                              |
 | ----------------------- | --------------------------------------------------------------------------- |
-| `agent_loop.nim`        | ReAct loop: build system+user, call LLM, dispatch tool calls, log to memory.|
-| `tools/shell.nim`       | Shell tool with deny-list and per-call timeout.                             |
 | `mercury_agent.nim`     | CLI wiring + subcommand entry points (`chat`, `ask`, `session`, `daemon`).  |
+| `tools/shell.nim`       | Shell tool with deny-list and per-call timeout.                             |
 
 The agent loop's contract is simple:
 

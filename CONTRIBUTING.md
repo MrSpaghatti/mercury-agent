@@ -100,16 +100,16 @@ nimpretty src/mercury_core/src/mercury_core/*.nim
 ```
 mercury/
 ├── mercury_core/              # Shared library (no binary)
-│   ├── src/mercury_core/      # 18 source modules (incl. build_llm_client.nim)
+│   ├── src/mercury_core/      # 19 source modules (incl. agent_loop.nim,
+│   │                         # build_llm_client.nim)
 │   └── tests/                 # 20+ test files
 ├── mercury_agent/             # CLI + Discord daemon binary
-│   ├── src/                   # agent_loop.nim, mercury_agent.nim,
-│   │                         # build_llm_client.nim, tools/
+│   ├── src/                   # mercury_agent.nim, tools/
 │   └── tests/                 # tagent_loop, tcli, tintegration, test_shell_tool
 ├── mercury_code/              # Autonomous coding harness binary
 │   ├── src/mercury_code/      # mercury_code.nim, code_runner.nim,
 │   │                         # code_tool.nim, compile.nim, config.nims
-│   └── tests/                 # tcode_runner (11 tests)
+│   └── tests/                 # tcode_runner (23 tests)
 ├── Makefile                   # build/test/lint shortcuts
 └── *.md                       # Documentation
 ```
@@ -117,7 +117,7 @@ mercury/
 ### Module dependency graph (simplified)
 
 ```
-config.nim ──▶ llm_client.nim ──▶ agent_loop.nim ──▶ mercury_agent.nim
+config.nim ──▶ llm_client.nim ──▶ agent_loop.nim (mercury_core) ──▶ mercury_agent.nim
      │                               │
      └──▶ memory.nim ────────────────┘
           tool_registry.nim ─────────┘

@@ -27,12 +27,12 @@
 
 import std/[json, strutils, tables]
 
-import mercury_core/config
-import mercury_core/llm_client
-import mercury_core/tool_registry
-import mercury_core/memory
-import mercury_core/persona
-import mercury_core/delegate
+import config
+import llm_client
+import tool_registry
+import memory
+import persona
+import delegate
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -68,6 +68,9 @@ type
     delegation*: DelegationConfig
       ## Delegation safety bounds. Determines whether this agent can
       ## spawn children and how deep nesting can go.
+    streamCallback*: OnStreamEvent
+      ## If non-nil, the agent loop uses chatCompletionStream instead of
+      ## chatCompletion, delivering token-by-token deltas to this callback.
 
   AgentStats* = object
     ## Counters returned alongside the agent response, useful for tests
@@ -243,11 +246,19 @@ proc runAgentLoop*(
 
     var resp: ChatResponse
     try:
-      resp = llm.chatCompletion(
-        prompt = "",
-        history = messages,
-        extraParams = perRequestParams,
-      )
+      if agentCfg.streamCallback != nil:
+        resp = llm.chatCompletionStream(
+          prompt = "",
+          history = messages,
+          extraParams = perRequestParams,
+          onEvent = agentCfg.streamCallback,
+        )
+      else:
+        resp = llm.chatCompletion(
+          prompt = "",
+          history = messages,
+          extraParams = perRequestParams,
+        )
     except LLMError as e:
       let errText = "LLM request failed: " & e.msg
       let errMsg = ChatMessage(role: crAssistant, content: errText)

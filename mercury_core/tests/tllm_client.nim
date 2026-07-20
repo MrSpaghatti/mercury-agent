@@ -433,6 +433,74 @@ suite "chatCompletion request shape":
     check req.hasKey("messages")
 
 # ---------------------------------------------------------------------------
+# Suite: chatCompletionStream (SSE)
+# ---------------------------------------------------------------------------
+
+suite "chatCompletionStream":
+  setup:
+    resetMock(sharedServer)
+
+  test "delivers content deltas via onEvent and aggregates the final text":
+    let ev1 = %*{
+      "id": "chatcmpl-s1", "model": "test-model",
+      "choices": [{"index": 0, "delta": {"content": "Hel"}}]
+    }
+    let ev2 = %*{
+      "id": "chatcmpl-s1", "model": "test-model",
+      "choices": [{
+        "index": 0, "delta": {"content": "lo!"}, "finish_reason": "stop"
+      }],
+      "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}
+    }
+    let body = "data: " & $ev1 & "\n\ndata: " & $ev2 & "\n\ndata: [DONE]\n\n"
+    sharedServer.enqueue("200 OK", body)
+    let client = makeClient(sharedServer)
+
+    var deltas: seq[string] = @[]
+    var finishEvents = 0
+    let onEvent = proc(ev: ChatCompletionStreamEvent) {.gcsafe, raises: [].} =
+      {.cast(gcsafe), cast(raises: []).}:
+        if ev.kind == sekContent:
+          deltas.add(ev.delta)
+        elif ev.kind == sekFinish:
+          inc finishEvents
+
+    let resp = client.chatCompletionStream("say hello", onEvent = onEvent)
+    check deltas == @["Hel", "lo!"]
+    check finishEvents == 1
+    check resp.content == "Hello!"
+    check resp.finishReason == "stop"
+    check resp.usage.totalTokens == 7
+
+  test "aggregates streamed tool call argument deltas":
+    let ev1 = %*{
+      "id": "chatcmpl-s2", "model": "test-model",
+      "choices": [{"index": 0, "delta": {"tool_calls": [
+        {"index": 0, "id": "call_1",
+         "function": {"name": "shell", "arguments": "{\"cmd\": "}}
+      ]}}]
+    }
+    let ev2 = %*{
+      "id": "chatcmpl-s2", "model": "test-model",
+      "choices": [{
+        "index": 0,
+        "delta": {"tool_calls": [
+          {"index": 0, "function": {"arguments": "\"ls\"}"}}
+        ]},
+        "finish_reason": "tool_calls"
+      }]
+    }
+    let body = "data: " & $ev1 & "\n\ndata: " & $ev2 & "\n\ndata: [DONE]\n\n"
+    sharedServer.enqueue("200 OK", body)
+    let client = makeClient(sharedServer)
+
+    let resp = client.chatCompletionStream("run ls", onEvent = nil)
+    check resp.toolCalls.len == 1
+    check resp.toolCalls[0].name == "shell"
+    check resp.toolCalls[0].arguments == "{\"cmd\": \"ls\"}"
+    check resp.finishReason == "tool_calls"
+
+# ---------------------------------------------------------------------------
 # Teardown
 # ---------------------------------------------------------------------------
 

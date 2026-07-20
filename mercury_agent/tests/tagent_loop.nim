@@ -15,7 +15,7 @@ import mercury_core/memory
 import mercury_core/config
 
 import mock_server
-import agent_loop
+import mercury_core/agent_loop
 
 # ---------------------------------------------------------------------------
 # Threaded async-dispatcher harness around `mock_server.MockLLMServer`

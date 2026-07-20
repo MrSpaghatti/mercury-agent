@@ -7,7 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Streaming responses (SSE).** `chatCompletionStream` proc added to
+  `mercury_core/llm_client.nim` with raw-socket SSE parsing. `AgentConfig`
+  accepts an optional `streamCallback`; when set, the ReAct loop streams
+  token-by-token deltas to the callback. CLI (`chat`, `ask`, `session`)
+  defaults to streaming output with a `--no-stream` flag to disable.
+  Discord daemon does not yet support progressive edits (blocked on
+  dimscord `--threads:on`).
+
+- **Web UI (`mercury_agent web`).** New `web_server.nim` module serves a
+  single-page chat interface from Nim's stdlib `asynchttpserver`. Routes:
+  `GET /` (index.html), `GET /assets/*` (CSS/JS), `POST /api/chat` (agent
+  loop, JSON response), `GET /api/sessions`, `GET /api/sessions/:id`,
+  `GET /api/search?q=`. Binds loopback-only (`127.0.0.1`) and has no CORS
+  headers — the API has no auth and the agent has shell/file tools, so it
+  must not be reachable off-host. Static assets served from `web_assets/`
+  directory (embedded at compile time via `staticRead` when
+  `-d:embedAssets` is set; the filesystem-read fallback validates asset
+  paths to prevent traversal). Configurable via `webPort` in TOML,
+  `MERCURY_WEB_PORT` env var, or `--port` CLI flag (default 8080).
+  SSE streaming deferred — `asynchttpserver` closes the connection after
+  `respond()`, making long-lived streams impractical.
+
+- **`MercuryConfig.webPort`** field added to `config.nim` (default 8080),
+  loaded from TOML key `web_port` and env var `MERCURY_WEB_PORT`.
+
+- **`listSessions`** proc added to `mercury_core/memory.nim` with
+  `SessionSummary` type for listing recent sessions.
+
+### Changed
+- **Agent loop relocated to `mercury_core`.** `agent_loop.nim` moved from
+  `mercury_agent/src/` to `mercury_core/src/mercury_core/`, eliminating the
+  cross-package injection hack. `agent_dispatcher` now imports `AgentResult`
+  directly from `agent_loop`. All callers (`mercury_agent`, `mercury_code`,
+  test files) updated to `import mercury_core/agent_loop`.
+- **SQLite busy_timeout added to memory.nim.** `PRAGMA busy_timeout=5000`
+  prevents `SQLITE_BUSY` under concurrent read/write access (WAL mode was
+  already enabled).
+
 ### Fixed
+
+- **`defaultConfig()` dropped `maxLoopIterations`** when `webPort` was added
+  to the same object literal, leaving it at Nim's zero value; `validate()`
+  then rejected every config that didn't explicitly set
+  `max_loop_iterations`, breaking `history`/`search`/`session` and other
+  commands relying on the default. Restored.
+- **`chatCompletionStream` never actually worked.** `Socket.recvLine` pads
+  a genuine blank line to `"\r\n"` specifically to distinguish it from a
+  real disconnect (`""`); the header-read loop and the SSE blank-line
+  check both tested for `""`, so the header loop silently consumed the
+  entire response body before the SSE parser ever ran, and the event
+  dispatch branch was dead code besides. Separately, the raw status line
+  (`"HTTP/1.1 200 OK"`) was fed whole into a parser expecting `"200 OK"`,
+  so `status` was always `0` and even a successful response took the error
+  branch. All three fixed; added a `BodyReader` that also dechunks
+  `Transfer-Encoding: chunked` bodies (common through HTTPS proxies, and
+  previously unhandled); added the first real test coverage for this path
+  (`chatCompletionStream` suite in `tllm_client.nim`).
+- **Security — path traversal in the web UI's static asset handler.**
+  `serveAsset` joined the request path onto `web_assets/` and read it with
+  no `..`-segment check; `GET /assets/../../../../etc/passwd` returned
+  arbitrary local files when built without `-d:embedAssets` (the default).
+  Added `isSafeAssetPath`.
+- **Daemon silently swallowed agent-run errors.** `cmdDaemon`'s error path
+  returned a default-initialized `AgentResult` whose `stopReason` defaulted
+  to `asrFinished` instead of `asrError`, so a crashed agent run reported
+  success with an empty message to Discord instead of surfacing the
+  failure. Now sets `stopReason = asrError` with the real error text.
+- **SQLite WAL mode was dropped, not added to, in `memory.nim`.** The
+  `busy_timeout` PRAGMA replaced `journal_mode=WAL` instead of joining it,
+  contrary to the change's own intent. Restored WAL alongside busy_timeout.
+- **Code quality pass.** Removed dead `parseRole` proc in `llm_client.nim`.
+  Added `stderr` logging to previously-silent CatchableError discards in
+  `llm_client` and the daemon agent runner. `validate()` now warns when
+  OpenRouter is selected but `OPENROUTER_API_KEY` is empty.
+
 
 - **Security — coding-harness file tools ignored the sandbox root.**
   `read_file` / `write_file` in `mercury_code/code_tool.nim` documented

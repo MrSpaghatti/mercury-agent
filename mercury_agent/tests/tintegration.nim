@@ -32,7 +32,7 @@ import mercury_core/tool_registry
 import mercury_core/memory
 
 import mock_server
-import agent_loop
+import mercury_core/agent_loop
 import tools/shell
 
 # ---------------------------------------------------------------------------

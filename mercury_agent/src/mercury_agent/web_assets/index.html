@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mercury Agent</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>☿ Mercury</h1>
+      <div id="session-controls">
+        <select id="session-select">
+          <option value="">+ New session</option>
+        </select>
+        <button id="search-toggle" title="Search messages">🔍</button>
+      </div>
+    </header>
+
+    <div id="search-panel" class="hidden">
+      <input type="text" id="search-input" placeholder="Search across all messages...">
+      <div id="search-results"></div>
+    </div>
+
+    <main id="chat-container">
+      <div id="messages"></div>
+    </main>
+
+    <footer>
+      <textarea id="user-input" rows="1" placeholder="Type a message..." autofocus></textarea>
+      <button id="send-btn">Send</button>
+    </footer>
+  </div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

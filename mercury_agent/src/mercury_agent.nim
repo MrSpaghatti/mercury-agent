@@ -12,7 +12,8 @@
 ## flags `--model`, `--provider`, and `--temperature` override the values
 ## in the loaded config without touching disk.
 
-import std/[os, strutils, strformat, asyncdispatch, options, json]
+import std/[os, strutils, strformat, asyncdispatch, options, json,
+            asynchttpserver, net]
 import db_connector/db_sqlite
 
 import mercury_core/config
@@ -31,12 +32,13 @@ import mercury_core/mcp_tool
 import mercury_core/persona
 import mercury_core/delegate
 from mercury_core/agent_dispatcher import AgentDispatcher, AgentRequest, AgentRunFn,
-    AgentLoopResult, newAgentDispatcher
+    newAgentDispatcher
 
 import dimscord
 
-import agent_loop
+import mercury_core/agent_loop
 import tools/shell
+import mercury_agent/web_server
 
 # ---------------------------------------------------------------------------
 # Globals for graceful Ctrl+C handling
@@ -47,11 +49,15 @@ var ctrlCRequested* = false
   ## turns. Exposed for tests.
 
 var daemonShutdownRequested* = false
-  ## Set by the SIGINT hook in daemon mode to signal graceful shutdown.
+var gWebServer*: WebServer = nil
+  ## Set by cmdWeb so the Ctrl+C hook can close the server socket.
+
 
 proc onCtrlC() {.noconv.} =
   ctrlCRequested = true
   daemonShutdownRequested = true
+  if not gWebServer.isNil:
+    gWebServer.server.close()
   # Best-effort newline so the next prompt isn't glued to "^C".
   try: stdout.write("\n") except CatchableError: discard
 
@@ -423,10 +429,16 @@ proc runOneTurn(
     reg: ToolRegistry;
     mem: var Memory;
     userInput: string;
+    streamCallback: OnStreamEvent = nil;
 ): AgentResult =
   ## Thin wrapper around `runAgentLoop` so the chat and ask commands
   ## share their per-turn logic.
-  runAgentLoop(cfg, llm, reg, mem, userInput)
+  if streamCallback != nil:
+    var agentCfg = newAgentConfig(cfg)
+    agentCfg.streamCallback = streamCallback
+    runAgentLoop(agentCfg, llm, reg, mem, userInput)
+  else:
+    runAgentLoop(cfg, llm, reg, mem, userInput)
 
 proc runChatLoop*(
     cfg: MercuryConfig;
@@ -434,9 +446,11 @@ proc runChatLoop*(
     reg: ToolRegistry;
     mem: var Memory;
     initialBanner: string = "";
-) =
+    streamCallback: OnStreamEvent = nil;
+): int =
   ## Runs the interactive REPL until EOF or `:quit`. SIGINT between
-  ## turns is treated as a clean exit.
+  ## turns is treated as a clean exit. Returns 0 on clean exit, 1 on
+  ## unrecoverable error.
   if initialBanner.len > 0:
     printSystemNote(initialBanner)
   printSystemNote("type :quit to exit; Ctrl+C to interrupt")
@@ -459,13 +473,18 @@ proc runChatLoop*(
       break
     var res: AgentResult
     try:
-      res = runOneTurn(cfg, llm, reg, mem, trimmed)
+      res = runOneTurn(cfg, llm, reg, mem, trimmed, streamCallback)
     except CatchableError as e:
       printError(e.msg)
       continue
-    printAssistant(res.text)
+    # Don't re-print text if streaming already printed it token-by-token.
+    if streamCallback == nil:
+      printAssistant(res.text)
+    else:
+      stdout.writeLine("")
     if res.stopReason != asrFinished:
       printSystemNote("stop reason: " & $res.stopReason)
+  return 0
 
 # ---------------------------------------------------------------------------
 # Subcommand entry points
@@ -477,6 +496,7 @@ proc cmdChat*(
     temperature = -1.0;
     config = "";
     envFile = ".env";
+    noStream = false;
 ): int =
   ## Interactive chat mode. Returns a process exit code.
   setControlCHook(onCtrlC)
@@ -508,11 +528,18 @@ proc cmdChat*(
   let reg = buildRegistry(cfg)
   var mem = openMemory(cfg)
   defer: mem.close()
-  runChatLoop(
+  var streamCb: OnStreamEvent = nil
+  if not noStream:
+    streamCb = proc(event: ChatCompletionStreamEvent) {.gcsafe, raises: [].} =
+      {.cast(raises: []).}:
+        if event.kind == sekContent and event.delta.len > 0:
+          stdout.write(event.delta)
+          stdout.flushFile()
+  discard runChatLoop(
     cfg, llm, reg, mem,
     initialBanner = fmt"chat: provider={cfg.provider} model={activeModel(cfg)}",
+    streamCallback = streamCb,
   )
-  return 0
 
 proc cmdAsk*(
     question: seq[string];
@@ -521,6 +548,7 @@ proc cmdAsk*(
     temperature = -1.0;
     config = "";
     envFile = ".env";
+    noStream = false;
 ): int =
   ## Single-shot question mode.
   if question.len == 0:
@@ -557,7 +585,16 @@ proc cmdAsk*(
   let userInput = question.join(" ")
   var res: AgentResult
   try:
-    res = runAgentLoop(cfg, llm, reg, mem, userInput)
+    if noStream:
+      res = runAgentLoop(cfg, llm, reg, mem, userInput)
+    else:
+      var agentCfg = newAgentConfig(cfg)
+      agentCfg.streamCallback = proc(event: ChatCompletionStreamEvent) {.gcsafe, raises: [].} =
+        {.cast(raises: []).}:
+          if event.kind == sekContent and event.delta.len > 0:
+            stdout.write(event.delta)
+            stdout.flushFile()
+      res = runAgentLoop(agentCfg, llm, reg, mem, userInput)
   except CatchableError as e:
     printError(e.msg); return 1
   stdout.writeLine(res.text)
@@ -589,6 +626,7 @@ proc cmdSession*(
     temperature = -1.0;
     config = "";
     envFile = ".env";
+    noStream = false;
 ): int =
   ## Resume an existing session and continue chatting.
   if id.len == 0:
@@ -635,9 +673,17 @@ proc cmdSession*(
   printSystemNote(
     "starting a new session for follow-up turns " &
     "(history is read-only here)")
-  runChatLoop(
+  var streamCb: OnStreamEvent = nil
+  if not noStream:
+    streamCb = proc(event: ChatCompletionStreamEvent) {.gcsafe, raises: [].} =
+      {.cast(raises: []).}:
+        if event.kind == sekContent and event.delta.len > 0:
+          stdout.write(event.delta)
+          stdout.flushFile()
+  discard runChatLoop(
     cfg, llm, reg, mem,
     initialBanner = fmt"session: provider={cfg.provider} model={activeModel(cfg)}",
+    streamCallback = streamCb,
   )
   return 0
 
@@ -899,6 +945,64 @@ proc sendWithLogging*(sendFn: SendMessageFn; channelId, content: string): Future
     stderr.writeLine("[daemon] failed to send message: " & e.msg)
 
 # ---------------------------------------------------------------------------
+# Web UI command
+# ---------------------------------------------------------------------------
+
+proc cmdWeb*(
+    port = 0;
+    config = "";
+    envFile = ".env";
+): int =
+  ## Starts the web UI HTTP server.
+  var ov = emptyOverrides()
+  ov.configPath = config
+  ov.envPath = envFile
+  var cfg: MercuryConfig
+  try:
+    cfg = loadConfigWithOverrides(ov)
+  except ConfigError as e:
+    printError(e.msg); return 2
+  if port > 0:
+    cfg.webPort = port
+  let llm = buildLLMClient(cfg)
+
+  # Set agent globals so delegate tool can work.
+  setGlobalLLMClient(llm)
+  setMercuryConfig(cfg)
+  let personasPath = defaultPersonasPath()
+  let pReg =
+    if fileExists(personasPath): loadPersonasFile(personasPath)
+    else: newPersonaRegistry()
+  setPersonaRegistry(pReg)
+  setDelegationConfig(defaultDelegationConfig())
+
+  let reg = buildRegistry(cfg)
+  var mem = openMemory(cfg)
+
+  let ws = newWebServer(cfg, llm, reg, mem)
+  gWebServer = ws
+  stderr.writeLine("[web] listening on http://localhost:" & $ws.port)
+
+  proc serveUntilInterrupted() {.async.} =
+    let ctx = WebServerContext(ws: ws)
+    # serve() handles listen + accept loop. It blocks until the socket is closed.
+    # Loopback only: the agent has shell/file tools and the API carries
+    # no authentication, so this must not be reachable off-host.
+    await ws.server.serve(
+      Port(ws.port),
+      address = "127.0.0.1",
+      callback = proc (req: Request) {.async, gcsafe.} =
+        await handleRequest(ctx, req)
+    )
+
+  setControlCHook(onCtrlC)
+  waitFor serveUntilInterrupted()
+  printSystemNote("shutting down web server")
+  ws.stop()
+  mem.close()
+  return 0
+
+# ---------------------------------------------------------------------------
 # Daemon command
 # ---------------------------------------------------------------------------
 
@@ -992,23 +1096,19 @@ proc cmdDaemon*(
   let sendFn = makeSendFn(api)
   let runFn: AgentRunFn = proc(cfg: MercuryConfig; llm: LLMClient;
                                  reg: ToolRegistry; dbPath, userInput: string):
-                                   AgentLoopResult {.gcsafe, raises: [].} =
+                                   agent_loop.AgentResult {.gcsafe, raises: [].} =
     {.cast(raises: []).}:
       try:
         var mem = newMemory(dbPath)
         defer: mem.close()
         let agentResult = runAgentLoop(cfg, llm, reg, mem, userInput)
-        AgentLoopResult(
-          responseText: agentResult.text,
-          error: none[string](),
-          sessionId: agentResult.sessionId
-        )
+        return agentResult
       except CatchableError as e:
-        AgentLoopResult(
-          responseText: "",
-          error: some(e.msg),
-          sessionId: ""
-        )
+        stderr.writeLine("mercury: agent run failed in daemon: " & e.msg)
+        var fallback: agent_loop.AgentResult
+        fallback.text = e.msg
+        fallback.stopReason = asrError
+        return fallback
 
   let callbackProc = proc(r: agent_dispatcher.AgentResult) {.gcsafe, raises: [].} =
     {.cast(raises: []).}:
@@ -1066,6 +1166,7 @@ when isMainModule:
                      "Negative means leave at config default.",
       "config":      "path to TOML config (overrides default)",
       "envFile":     "path to .env file (default: .env)",
+      "noStream":    "disable token-by-token streaming output",
     }],
     [cmdAsk,     cmdName = "ask",     help = {
       "model":       "override model name",
@@ -1074,6 +1175,7 @@ when isMainModule:
                      "Negative means leave at config default.",
       "config":      "path to TOML config (overrides default)",
       "envFile":     "path to .env file (default: .env)",
+      "noStream":    "disable token-by-token streaming output",
     }],
     [cmdSession, cmdName = "session", help = {
       "model":       "override model name",
@@ -1082,6 +1184,7 @@ when isMainModule:
                      "Negative means leave at config default.",
       "config":      "path to TOML config (overrides default)",
       "envFile":     "path to .env file (default: .env)",
+      "noStream":    "disable token-by-token streaming output",
     }],
     [cmdHistory, cmdName = "history", help = {
       "limit":       "max sessions to show",
@@ -1096,6 +1199,11 @@ when isMainModule:
     [cmdRunPersona, cmdName = "run", help = {
       "persona":     "name of the persona to run (from personas.toml)",
       "task":         "task description for the persona agent",
+      "config":      "path to TOML config (overrides default)",
+      "envFile":     "path to .env file (default: .env)",
+    }],
+    [cmdWeb,      cmdName = "web",      help = {
+      "port":        "port to listen on (default: 8080 from config/env)",
       "config":      "path to TOML config (overrides default)",
       "envFile":     "path to .env file (default: .env)",
     }],

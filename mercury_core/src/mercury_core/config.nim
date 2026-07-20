@@ -35,6 +35,7 @@ type
     maxLoopIterations*: int
     dbPath*: string
     openrouterApiKey*: string   ## loaded from .env or env var
+    webPort*: int               ## web UI listen port
     discord*: DiscordConfig
     mcpServers*: seq[McpServerConfig]  ## Configured MCP server endpoints
 
@@ -49,8 +50,9 @@ const
   DefaultMaxTokens* = 4096
   DefaultTemperature* = 0.3
   DefaultMaxLoopIterations* = 10
-  DefaultDbPath* = "~/.local/share/mercury/mercury.db"
   DefaultMcpTimeoutMs* = 30_000
+  DefaultDbPath* = "~/.local/share/mercury/mercury.db"
+  DefaultWebPort* = 8080
 
 proc defaultConfig*(): MercuryConfig =
   ## Returns a MercuryConfig populated with all defaults.
@@ -65,6 +67,7 @@ proc defaultConfig*(): MercuryConfig =
     maxLoopIterations: DefaultMaxLoopIterations,
     dbPath: DefaultDbPath,
     openrouterApiKey: "",
+    webPort: DefaultWebPort,
     discord: defaultDiscordConfig(),
     mcpServers: @[],
   )
@@ -191,6 +194,9 @@ proc applyTomlSection(cfg: var MercuryConfig; section, key, val: string) =
       let n = parseInt(val)
       cfg.maxLoopIterations = n
     of "db_path":            cfg.dbPath = val
+    of "web_port":
+      let n = parseInt(val)
+      cfg.webPort = n
     else: discard
   of "discord":
     case k
@@ -348,6 +354,14 @@ proc applyEnvVars(cfg: var MercuryConfig) =
   if apiKey.len > 0:
     cfg.openrouterApiKey = apiKey
 
+  let webPortStr = getEnv("MERCURY_WEB_PORT")
+  if webPortStr.len > 0:
+    try:
+      cfg.webPort = parseInt(webPortStr)
+    except ValueError:
+      raise newException(ConfigError,
+        "MERCURY_WEB_PORT must be an integer, got: " & webPortStr)
+
   # Apply MCP server configuration from environment variables.
   applyEnvMcpServers(cfg)
 
@@ -371,6 +385,10 @@ proc validate*(cfg: MercuryConfig) =
     raise newException(ConfigError, "openrouter_endpoint must not be empty")
   if cfg.dbPath.len == 0:
     raise newException(ConfigError, "db_path must not be empty")
+
+  # Warn if OpenRouter is selected but no API key is configured.
+  if cfg.provider == "openrouter" and cfg.openrouterApiKey.len == 0:
+    stderr.writeLine("mercury: warning — provider is 'openrouter' but OPENROUTER_API_KEY is empty")
 
 proc loadConfig*(
     configPath: string = "",
