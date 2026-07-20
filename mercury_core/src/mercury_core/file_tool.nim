@@ -83,7 +83,7 @@ proc fileWriteTool*(rules: FileRules, cfg: DiscordConfig, userId: string): Tool 
     of pathAsk:
       return ToolResult(output: "Requires approval", isError: true, exitCode: 1)
     of pathAllow:
-      let perm = canUseTool(userId, "write_file", cfg)
+      let perm = canUseTool(userId, "file_write", cfg)
       case perm
       of pdDeny:
         return ToolResult(output: "Access denied: user not allowed", isError: true, exitCode: 1)

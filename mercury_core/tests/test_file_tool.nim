@@ -92,6 +92,20 @@ suite "File Tool":
     check res.isError == true
     check res.output.contains("Access denied")
 
+  test "fileWriteTool honors explicit tools.deny by canonical name":
+    # The tool registers as "file_write"; the permission check must query the
+    # same name so an admin's tools.deny entry is enforced (regression: it
+    # previously queried "write_file" and silently bypassed this deny).
+    var denyCfg = cfg
+    denyCfg.tools.deny.add("file_write")
+    let path = sandboxDir / "denied.txt"
+    let t = fileWriteTool(rules, denyCfg, "admin")
+    let args = %*{"path": path, "content": "should not be written"}
+    let res = t.execute(args)
+    check res.isError == true
+    check res.output.contains("Access denied")
+    check (not fileExists(path))
+
   test "fileWriteTool size limit":
     let path = sandboxDir / "big.txt"
     let t = fileWriteTool(rules, cfg, "admin")
