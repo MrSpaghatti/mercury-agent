@@ -5,6 +5,7 @@ import std/[unittest, strutils, json, os]
 
 import mercury_code/code_runner
 import mercury_code/code_tool
+import mercury_code/compile
 import mercury_core/tool_registry
 
 # ---------------------------------------------------------------------------
@@ -199,3 +200,32 @@ suite "code_tool sandbox enforcement":
     let res = t.execute(%*{"path": sibling / "secret.nim"})
     check: res.isError
     check: "outside the sandbox" in res.output
+
+# ---------------------------------------------------------------------------
+# runCompile execution
+# ---------------------------------------------------------------------------
+
+suite "runCompile execution":
+
+  test "multi-word command actually launches and captures output":
+    # Regression: without poEvalCommand, startProcess treated the whole
+    # string as one executable name and every real build command failed.
+    let res = runCompile("echo hello from compile", 10_000)
+    check: res.success
+    check: res.exitCode == 0
+    check: "hello from compile" in res.stdout
+
+  test "non-zero exit is reported as failure":
+    let res = runCompile("sh -c 'echo boom; exit 2'", 10_000)
+    check: not res.success
+    check: res.exitCode == 2
+    check: "boom" in res.stdout
+
+  test "large output does not deadlock and is captured up to the cap":
+    # More than one pipe buffer; before the incremental drain this hung
+    # until the timeout and lost the output.
+    let res = runCompile("seq 1 200000", 15_000, maxOutputBytes = 64 * 1024)
+    check: not res.timedOut
+    check: res.success
+    check: res.stdout.startsWith("1\n")
+    check: "[output truncated]" in res.stdout

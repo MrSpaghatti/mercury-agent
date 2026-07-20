@@ -10,11 +10,40 @@
 ##   1. Validate the command is within `sandboxRoot` before calling.
 ##   2. Use the shell tool's deny-list for command-level safety.
 
-import std/[osproc, streams, times, monotimes, os]
+import std/[osproc, times, monotimes, os]
+when defined(posix):
+  import std/posix
+else:
+  import std/streams
 
 import code_runner
 
 const DefaultCompileTimeoutMs = 120_000
+
+when defined(posix):
+  proc setNonBlocking(fd: FileHandle) =
+    let flags = fcntl(fd.cint, F_GETFL)
+    if flags != -1:
+      discard fcntl(fd.cint, F_SETFL, flags or O_NONBLOCK)
+
+  proc drainAvailable(fd: FileHandle; buf: var string; total: var int;
+                      cap: int): bool =
+    ## Reads all currently-available bytes on `fd`, storing up to `cap` total
+    ## bytes into `buf` (counting every byte in `total`) and discarding the
+    ## rest so the child never blocks on a full pipe. Returns true at EOF.
+    var tmp {.noinit.}: array[8192, char]
+    while true:
+      let n = read(fd.cint, addr tmp[0], tmp.len)
+      if n == 0:
+        return true
+      if n < 0:
+        return false
+      total += n
+      if cap <= 0 or buf.len < cap:
+        let take = if cap <= 0: n else: min(n, cap - buf.len)
+        let oldLen = buf.len
+        buf.setLen(oldLen + take)
+        copyMem(addr buf[oldLen], addr tmp[0], take)
 
 proc runCompile*(
     cmd: string;
@@ -36,7 +65,11 @@ proc runCompile*(
       cmd,
       workingDir = "",
       env = nil,
-      options = {poUsePath, poStdErrToStdOut},
+      # poEvalCommand: `cmd` is a full shell command line (e.g.
+      # "nim c -r src/main.nim"), so it must be evaluated by the shell.
+      # Without it, startProcess treats the entire string as one executable
+      # name and every multi-word build/test command fails to launch.
+      options = {poUsePath, poStdErrToStdOut, poEvalCommand},
     )
   except CatchableError:
     return CompileResult(
@@ -52,29 +85,57 @@ proc runCompile*(
   let deadline = startMono + initDuration(milliseconds = timeoutMs)
   var pollIntervalMs = 25
 
-  while true:
-    let rc = p.peekExitCode()
-    if rc != -1:
-      break
-    if getMonoTime() >= deadline:
-      timedOut = true
-      try:
-        p.kill()
-      except CatchableError:
-        discard
-      # Brief grace period for process to die.
-      var grace = 500
-      while grace > 0 and p.peekExitCode() == -1:
-        sleep(25)
-        grace -= 25
-      try:
-        p.terminate()
-      except CatchableError:
-        discard
-      break
-    sleep(pollIntervalMs)
-    if pollIntervalMs < 100:
-      pollIntervalMs += 5
+  # Merged stdout+stderr (poStdErrToStdOut) must be drained while the child
+  # runs; reading only after it exits deadlocks once the output exceeds one
+  # pipe buffer (~64 KiB) — routine for a verbose compile or test run.
+  var outBuf = ""
+  var outTotal = 0
+
+  when defined(posix):
+    setNonBlocking(p.outputHandle)
+    var eof = false
+    while true:
+      if not eof: eof = drainAvailable(p.outputHandle, outBuf, outTotal, maxOutputBytes)
+      if p.peekExitCode() != -1:
+        break
+      if getMonoTime() >= deadline:
+        timedOut = true
+        try: p.kill() except CatchableError: discard
+        var grace = 500
+        while grace > 0 and p.peekExitCode() == -1:
+          if not eof: eof = drainAvailable(p.outputHandle, outBuf, outTotal, maxOutputBytes)
+          sleep(25)
+          grace -= 25
+        try: p.terminate() except CatchableError: discard
+        break
+      sleep(pollIntervalMs)
+      if pollIntervalMs < 100:
+        pollIntervalMs += 5
+    var guard = 0
+    while not eof and guard < 100_000:
+      eof = drainAvailable(p.outputHandle, outBuf, outTotal, maxOutputBytes)
+      inc guard
+  else:
+    while true:
+      let rc = p.peekExitCode()
+      if rc != -1:
+        break
+      if getMonoTime() >= deadline:
+        timedOut = true
+        try: p.kill() except CatchableError: discard
+        var grace = 500
+        while grace > 0 and p.peekExitCode() == -1:
+          sleep(25)
+          grace -= 25
+        try: p.terminate() except CatchableError: discard
+        break
+      sleep(pollIntervalMs)
+      if pollIntervalMs < 100:
+        pollIntervalMs += 5
+    let rawOutput = try: readAll(p.outputStream) except CatchableError: ""
+    outTotal = rawOutput.len
+    outBuf = if rawOutput.len > maxOutputBytes: rawOutput[0 ..< maxOutputBytes]
+             else: rawOutput
 
   var exitCode = -1
   try:
@@ -82,16 +143,15 @@ proc runCompile*(
   except CatchableError:
     discard
 
-  let rawOutput = try: readAll(p.outputStream) except CatchableError: ""
   try: p.close() except CatchableError: discard
 
   let durationMs = int((getMonoTime() - startMono).inMilliseconds)
 
   # Clamp output to maxOutputBytes.
-  let stdout = if rawOutput.len > maxOutputBytes:
-                 rawOutput[0 ..< maxOutputBytes] & "\n... [output truncated]"
+  let stdout = if outTotal > maxOutputBytes:
+                 outBuf & "\n... [output truncated]"
                else:
-                 rawOutput
+                 outBuf
 
   let errors = if exitCode != 0:
                  parseNimCompilerOutput(stdout)
