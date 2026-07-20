@@ -69,7 +69,7 @@ AI agent with:
 | `nim check` (core + agent) | ✅ No static analysis errors |
 | `.env` / `.env.example` | ✅ Configured |
 | `.gitignore` | ✅ Covers all build artifacts |
-| Architectural review | ✅ `report.md` written |
+| Architectural review | ✅ `AUDIT_REPORT.md` written |
 | Hardening pass (2026-07-19) | ⚠️ Found & fixed 7 real bugs incl. 2 sandbox-escape issues and a broken compile path — see CHANGELOG `[Unreleased]` |
 | CI pipeline (GitHub Actions) | ✅ Passing on Nim 2.0.8 and 2.2.2 |
 
