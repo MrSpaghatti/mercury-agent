@@ -57,12 +57,18 @@ proc newPersonaRegistry*(): PersonaRegistry =
 
 proc applyPersonaDefaults(pc: var PersonaConfig) =
   ## Fills zero-value fields with safe defaults. Call before spawning.
+  ##
+  ## NOTE: `delegateEnabled` is deliberately not defaulted here. A plain
+  ## `bool` can't distinguish "TOML never set delegate_enabled" from
+  ## "TOML explicitly set delegate_enabled = false" — both read as Nim's
+  ## zero value. Defaulting it to `DefaultDelegateEnabled` (true) from
+  ## this point on would silently re-enable delegation for personas that
+  ## explicitly opted out. Instead, `loadPersonasFromStream` seeds each
+  ## persona buffer with `DefaultDelegateEnabled` before parsing, so an
+  ## explicit `delegate_enabled = false` in the file is the only way to
+  ## end up with `false` here.
   if pc.memoryMaxHistory <= 0:
     pc.memoryMaxHistory = DefaultMemoryMaxHistory
-  if pc.delegateEnabled == false:
-    discard  # already set
-  else:
-    pc.delegateEnabled = DefaultDelegateEnabled
   if pc.maxDelegationDepth <= 0:
     pc.maxDelegationDepth = DefaultMaxDelegationDepth
   if pc.maxDelegationsPerRun <= 0:
@@ -118,7 +124,12 @@ proc loadPersonasFromStream*(reg: var PersonaRegistry; stream: Stream) =
         registerPersona(reg, buf)
       currentSection = event.section
       if currentSection.startsWith("personas."):
-        buf = PersonaConfig(name: currentSection.split('.')[1])
+        # Seed with the documented default; an explicit `delegate_enabled`
+        # key below (if present) is the only thing that can override it.
+        buf = PersonaConfig(
+          name: currentSection.split('.')[1],
+          delegateEnabled: DefaultDelegateEnabled,
+        )
       else:
         buf = PersonaConfig()
     of cfgKeyValuePair:

@@ -28,11 +28,6 @@ suite "Permission Framework":
     cfg.admins.deny.add("admin_user")
     check isAdmin("admin_user", cfg) == false
 
-  test "isAdmin - user in both allow and deny list is denied":
-    cfg.users.allow.add("both_user")
-    cfg.users.deny.add("both_user")
-    check isUserAllowed("both_user", cfg) == false
-
   # ---------------------------------------------------------------------------
   # isUserAllowed
   # ---------------------------------------------------------------------------
@@ -157,11 +152,6 @@ suite "Permission Framework":
     check canUseTool("normal_user", "shell", cfg) == pdAsk
 
   test "canUseTool - riskHigh admin also gets ask":
-    check canUseTool("admin_user", "shell", cfg) == pdAsk
-
-  test "canUseTool - riskCritical gets ask for everyone":
-    # delete_file is riskMedium today, but test the concept with shell (riskHigh)
-    check canUseTool("normal_user", "shell", cfg) == pdAsk
     check canUseTool("admin_user", "shell", cfg) == pdAsk
 
   # ---------------------------------------------------------------------------

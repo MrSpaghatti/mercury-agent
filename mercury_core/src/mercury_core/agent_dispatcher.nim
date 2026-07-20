@@ -59,8 +59,11 @@ proc newAgentDispatcher*(callback: AgentCallback; cfg: MercuryConfig;
 
 proc dispatchAgent*(dispatcher: AgentDispatcher; request: AgentRequest): Future[void] {.async, gcsafe.} =
   ## Dispatches an agent request. In production mode, opens the memory
-  ## store and runs a real agent loop synchronously. In test/placeholder
-  ## mode (no cfg/llm/reg), echoes the input back.
+  ## store and runs a real agent loop synchronously, resuming
+  ## `request.sessionId` (with its prior message history) if it's set —
+  ## this is what gives a Discord thread's turns real continuity instead
+  ## of each message starting a fresh, historyless conversation. In
+  ## test/placeholder mode (no cfg/llm/reg), echoes the input back.
   ##
   ## FUTURE: This should spawn a worker thread. Blocked on dimscord's
   ## GC-safety with --threads:on.
@@ -78,7 +81,8 @@ proc dispatchAgent*(dispatcher: AgentDispatcher; request: AgentRequest): Future[
           let cb = dispatcher.turnCallback
           agentCfg.turnCallback = proc() {.gcsafe, raises: [].} = cb(channelId)
         let agentResult = runAgentLoop(agentCfg, dispatcher.llm, dispatcher.reg,
-                                        mem, request.userInput)
+                                        mem, request.userInput,
+                                        resumeSessionId = request.sessionId)
         result.responseText = agentResult.text
         if agentResult.stopReason == asrError:
           result.error = some(agentResult.text)

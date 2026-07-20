@@ -6,7 +6,8 @@ type
     port*: int
     responseDelay*: int
     requestCount*: int
-    
+    lastRequestBody*: string
+
     # Response config
     responseText*: string
     toolCallName*: string
@@ -54,9 +55,13 @@ proc setDelay*(self: MockLLMServer, ms: int) =
 proc getRequestCount*(self: MockLLMServer): int =
   self.requestCount
 
+proc getLastRequestBody*(self: MockLLMServer): string =
+  self.lastRequestBody
+
 proc handleRequest*(self: MockLLMServer, req: Request) {.async.} =
   self.requestCount += 1
-  
+  self.lastRequestBody = req.body
+
   if self.responseDelay > 0:
     await sleepAsync(self.responseDelay)
     

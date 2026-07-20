@@ -1,9 +1,11 @@
 import unittest
-import std/[asyncdispatch, options, os, strutils, json]
+import std/[asyncdispatch, options, os, strutils, json, times]
 import db_connector/db_sqlite
 
 import mercury_core/[discord, discord_mocks, discord_types, discord_commands,
-  permission, agent_dispatcher, file_tool, file_path_validator, thread_mapping, tool_registry]
+  permission, agent_dispatcher, file_tool, file_path_validator, thread_mapping,
+  tool_registry, config]
+import mock_llm_server
 
 suite "End-to-end Discord Integration":
   var
@@ -43,47 +45,11 @@ suite "End-to-end Discord Integration":
   teardown:
     db.close()
 
-  test "Mention creates thread and dispatches agent":
-    let msg = makeMessage("regular_user", "Hello bot!", "channel_1", "guild_1", @["bot_user_id"])
-    waitFor onMessageCreate(bot, msg)
-    waitFor sleepAsync(200) # wait for dispatcher callback + agent processing
-
-    var threadCreated = false
-    var responseSent = false
-
-    for call in api.calls:
-      if call.kind == mockCreateThread:
-        threadCreated = true
-        check call.channelId == "channel_1"
-      if call.kind == mockSendMessage:
-        responseSent = true
-
-    check threadCreated
-    # Note: responseSent depends on whether dispatchAgent sends a message.
-    # The current dispatcher is a placeholder — uncomment below once implemented:
-    # check responseSent
-
-  test "Message in existing thread continues session":
-    # First, setup an existing thread
-    let sessionId = "test_session_1"
-    setThreadMapping(db, "thread_1", sessionId, "channel_1", "guild_1")
-
-    let msg = makeMessage("regular_user", "Next message", "thread_1", "guild_1", @[])
-    waitFor onMessageCreate(bot, msg)
-    waitFor sleepAsync(200) # wait for dispatcher callback + agent processing
-
-    # Should NOT create a new thread. Should trigger typing in thread_1 and send response there.
-    var newThreadCount = 0
-    var typingInThread = false
-
-    for call in api.calls:
-      if call.kind == mockCreateThread:
-        newThreadCount.inc
-      if call.kind == mockTriggerTyping and call.channelId == "thread_1":
-        typingInThread = true
-
-    check newThreadCount == 0
-    check typingInThread
+  # "Mention creates a thread and dispatches" and "message in an existing
+  # thread continues the session without creating a new one" are covered
+  # more precisely (exact session-ID equality, call-ordering) by
+  # test_thread_reconnection.nim's "thread reconnection" suite, which
+  # exercises the same bot.onMessageCreate entry point.
 
   test "Bot commands: !status, !admin restart, !config set":
     let statusMsg = makeMessage("regular_user", "!status", "channel_1", "guild_1", @[])
@@ -134,37 +100,124 @@ suite "End-to-end Discord Integration":
       try: removeFile("test_allowed.txt") except CatchableError: discard
       try: removeFile(".env_test") except CatchableError: discard
 
-  test "Thread archival behavior":
-    let msg1 = makeMessage("regular_user", "Hello first", "channel_1", "guild_1", @["bot_user_id"])
+  # "Thread archival": mentioning the bot again after its thread was
+  # archived creates a new thread but reuses the old session — this is
+  # test_thread_reconnection.nim's "archived thread creates new thread and
+  # reuses old session" test, with more precise assertions (exact session
+  # ID, call ordering) than this suite had.
+
+# ---------------------------------------------------------------------------
+# Real user scenario: a Discord user has a conversation across two messages
+# in the same thread and expects the bot to remember what they said. This
+# suite runs the *production* dispatcher (real runAgentLoop against a mock
+# LLM, real file-backed memory) through the actual bot.onMessageCreate
+# entry point — not just dispatchAgent directly — so it proves the fix
+# end-to-end through the exact path a real Discord message takes.
+# ---------------------------------------------------------------------------
+
+proc chatResponseBody(text: string): string =
+  """{"id": "chatcmpl-e2e", "object": "chat.completion", "model": "mock",
+  "choices": [{"index": 0, "message": {"role": "assistant", "content": """ &
+  $(%text) & """}, "finish_reason": "stop"}],
+  "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}}"""
+
+suite "End-to-end Discord Integration: real conversation continuity":
+  var
+    db: DbConn
+    api: MockDiscordApi
+    bot: DiscordBot
+    shard: MockShard
+    server: MockServer
+    dbPath: string
+
+  setup:
+    db = open(":memory:", "", "", "")
+    initThreadMappingSchema(db)
+
+    server = startMockServer()
+    dbPath = getTempDir() / ("mercury_e2e_discord_" & $getTime().toUnix() &
+                              "_" & $getCurrentProcessId() & ".db")
+    for suffix in ["", "-wal", "-shm"]:
+      try: removeFile(dbPath & suffix)
+      except OSError: discard
+
+    api = newMockDiscordApi()
+    shard = newMockShard("bot_user_id")
+
+    var cfg = defaultConfig()
+    cfg.discord.admins.allow.add("admin_user")
+    cfg.discord.users.allow.add("regular_user")
+
+    let llm = makeClient(server)
+    let reg = newToolRegistry()
+    let sendFn = mockSendFn(api)
+    # Mirrors production wiring (mercury_agent.nim cmdDaemon): the
+    # dispatcher's callback is what actually delivers the agent's reply
+    # back to the channel/thread the user is in.
+    let callbackProc = proc(r: AgentResult) {.gcsafe, closure, raises: [].} =
+      {.cast(gcsafe), cast(raises: []).}:
+        try: discard waitFor sendFn(r.channelId, r.responseText)
+        except CatchableError: discard
+    let dispatcher = newAgentDispatcher(
+      callbackProc, cfg, llm, reg, dbPath)
+
+    bot = newDiscordBot(
+      sendMessage = sendFn,
+      triggerTyping = mockTypingFn(api),
+      createThread = mockCreateThreadFn(api),
+      archiveThread = mockArchiveThreadFn(api),
+      db = db,
+      config = cfg.discord,
+      dispatcher = dispatcher,
+      shard = shard,
+    )
+
+  teardown:
+    db.close()
+    stopMockServer(server)
+    for suffix in ["", "-wal", "-shm"]:
+      try: removeFile(dbPath & suffix)
+      except OSError: discard
+
+  test "bot remembers what the user said earlier in the same thread":
+    server.enqueue("200 OK", chatResponseBody("Nice to meet you, Alice!"))
+    server.enqueue("200 OK",
+      chatResponseBody("Your name is Alice, you told me earlier."))
+
+    # Turn 1: user mentions the bot in a channel — a new thread is created.
+    let msg1 = makeMessage(
+      "regular_user", "Hi, my name is Alice", "channel_1", "guild_1",
+      @["bot_user_id"])
     waitFor onMessageCreate(bot, msg1)
-    waitFor sleepAsync(150)
-    
-    var firstThreadId = ""
+
+    var threadId = ""
     for call in api.calls:
       if call.kind == mockCreateThread:
-        firstThreadId = call.threadId
-        
-    check firstThreadId != ""
-    
-    # Archive the thread via thread_mapping directly
-    archiveThread(db, firstThreadId)
-    
-    api.calls = @[]
-    
-    # Now user mentions bot again in channel_1
-    let msg2 = makeMessage("regular_user", "Hello again", "channel_1", "guild_1", @["bot_user_id"])
+        threadId = call.threadId
+    check threadId != ""
+
+    var firstReplySent = false
+    for call in api.calls:
+      if call.kind == mockSendMessage and call.channelId == threadId and
+          "Nice to meet you, Alice" in call.content:
+        firstReplySent = true
+    check firstReplySent
+
+    # Turn 2: user replies inside the thread (no mention needed — it's an
+    # existing mapped thread), asking the bot to recall what they said.
+    let msg2 = makeMessage(
+      "regular_user", "What's my name?", threadId, "guild_1", @[])
     waitFor onMessageCreate(bot, msg2)
-    waitFor sleepAsync(150)
-    
-    # It should create a NEW thread but reuse the same session
-    var secondThreadId = ""
-    var continueFound = false
+
+    var secondReplySent = false
     for call in api.calls:
-      if call.kind == mockCreateThread:
-        secondThreadId = call.threadId
-      if call.kind == mockSendMessage and "Continuing from previous session" in call.content:
-        continueFound = true
-        
-    check secondThreadId != ""
-    check secondThreadId != firstThreadId
-    check continueFound
+      if call.kind == mockSendMessage and call.channelId == threadId and
+          "you told me earlier" in call.content:
+        secondReplySent = true
+    check secondReplySent
+
+    # The real proof of continuity: the SECOND request sent to the LLM
+    # must contain the FIRST message's text, or the model could never
+    # have answered "What's my name?" correctly.
+    check server.requestCount == 2
+    check "Hi, my name is Alice" in server.requestBodies[1]

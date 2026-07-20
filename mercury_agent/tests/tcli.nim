@@ -55,6 +55,24 @@ proc seedSession(dbPath, content: string): string =
   mem.appendMessage(sid, msg)
   return sid
 
+proc captureStdout(body: proc(): int): tuple[rc: int; output: string] =
+  ## Redirects the process-wide `stdout` handle to a temp file for the
+  ## duration of `body`, so tests can assert on what a CLI command
+  ## actually prints to the user, not just its exit code.
+  let path = getTempDir() / ("mercury_cli_stdout_" & $getCurrentProcessId() &
+                             "_" & $epochTime() & ".txt")
+  let capture = open(path, fmWrite)
+  let realStdout = stdout
+  stdout = capture
+  var rc: int
+  try:
+    rc = body()
+  finally:
+    stdout = realStdout
+    capture.close()
+  result = (rc, readFile(path))
+  try: removeFile(path) except CatchableError: discard
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -209,7 +227,7 @@ suite "cli: sessionExists":
     check not sessionExists(path, "sess_does_not_exist")
 
 suite "cli: cmdHistory and cmdSearch on a fresh db":
-  test "history exits 0 with no sessions":
+  test "history prints 'no sessions yet' to the user when the db is empty":
     let path = tempDbPath()
     defer: teardownDb(path)
     putEnv("MERCURY_DB_PATH", path)
@@ -217,21 +235,22 @@ suite "cli: cmdHistory and cmdSearch on a fresh db":
     defer:
       delEnv("MERCURY_DB_PATH")
       delEnv("OPENROUTER_API_KEY")
-    check cmdHistory(envFile = "/dev/null") == 0
+    let (rc, output) = captureStdout(proc(): int = cmdHistory(envFile = "/dev/null"))
+    check rc == 0
+    check "no sessions yet" in output
 
-  test "history exits 0 and finds seeded sessions":
+  test "history prints the seeded session's id in the table it shows the user":
     let path = tempDbPath()
     defer: teardownDb(path)
-    discard seedSession(path, "alpha bravo")
+    let sid = seedSession(path, "alpha bravo")
     putEnv("MERCURY_DB_PATH", path)
     putEnv("OPENROUTER_API_KEY", "dummy")
     defer:
       delEnv("MERCURY_DB_PATH")
       delEnv("OPENROUTER_API_KEY")
-    check cmdHistory(envFile = "/dev/null") == 0
-    # Sanity check via the underlying helper.
-    let listed = listRecentSessions(path, 10)
-    check listed.len == 1
+    let (rc, output) = captureStdout(proc(): int = cmdHistory(envFile = "/dev/null"))
+    check rc == 0
+    check sid in output
 
   test "search rejects an empty query":
     let path = tempDbPath()
@@ -244,7 +263,7 @@ suite "cli: cmdHistory and cmdSearch on a fresh db":
     let rc = cmdSearch(query = @[], envFile = "/dev/null")
     check rc == 2
 
-  test "search returns 0 with no matches and 0 with a hit":
+  test "search with no matches tells the user, and doesn't fabricate a hit":
     let path = tempDbPath()
     defer: teardownDb(path)
     discard seedSession(path, "the quick brown fox")
@@ -253,8 +272,25 @@ suite "cli: cmdHistory and cmdSearch on a fresh db":
     defer:
       delEnv("MERCURY_DB_PATH")
       delEnv("OPENROUTER_API_KEY")
-    check cmdSearch(query = @["nonexistent"], envFile = "/dev/null") == 0
-    check cmdSearch(query = @["quick"], envFile = "/dev/null") == 0
+    let (rc, output) = captureStdout(
+      proc(): int = cmdSearch(query = @["nonexistent"], envFile = "/dev/null"))
+    check rc == 0
+    check "no matches" in output
+
+  test "search with a hit prints the matching session and content to the user":
+    let path = tempDbPath()
+    defer: teardownDb(path)
+    let sid = seedSession(path, "the quick brown fox")
+    putEnv("MERCURY_DB_PATH", path)
+    putEnv("OPENROUTER_API_KEY", "dummy")
+    defer:
+      delEnv("MERCURY_DB_PATH")
+      delEnv("OPENROUTER_API_KEY")
+    let (rc, output) = captureStdout(
+      proc(): int = cmdSearch(query = @["quick"], envFile = "/dev/null"))
+    check rc == 0
+    check sid in output
+    check "quick" in output
 
 suite "cli: ask and session error handling without a live LLM":
   test "ask requires a question":

@@ -176,9 +176,12 @@ suite "web_server POST /api/chat":
       let client = newAsyncHttpClient()
       client.headers = newHttpHeaders([("Content-Type", "application/json")])
       var lastCode: HttpCode
+      var lastBody: string
       for i in 1 .. 4:
         let resp = waitFor client.post(
           "http://127.0.0.1:" & $ws.port & "/api/chat", body = $(%*{"message": "hi"}))
         lastCode = resp.code
+        lastBody = waitFor resp.body
       check lastCode == Http429
+      check "rate limit" in lastBody
       client.close()

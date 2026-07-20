@@ -6,7 +6,8 @@
 ## (`mercury_core/memory`).
 ##
 ## The loop:
-##   1. Creates a new memory session for the run.
+##   1. Creates a new memory session for the run, or resumes an existing
+##      one (with its prior history) when `resumeSessionId` is given.
 ##   2. Builds a message history: `system` + `user`.
 ##   3. Calls the LLM with the registered tool definitions.
 ##   4. If the LLM returns text (`finish_reason == "stop"`), returns the text.
@@ -215,6 +216,7 @@ proc runAgentLoop*(
     memory: var Memory;
     userInput: string;
     extraParams: Table[string, JsonNode] = initTable[string, JsonNode]();
+    resumeSessionId: string = "";
 ): AgentResult =
   ## Runs the ReAct loop to convergence.
   ##
@@ -222,13 +224,27 @@ proc runAgentLoop*(
   ## is reached, or loop detection fires. Tool errors do *not* terminate
   ## the loop — they are reported back to the LLM as tool messages so the
   ## model can recover.
-  let sid = memory.newSession()
+  ##
+  ## If `resumeSessionId` is non-empty, that session is resumed instead of
+  ## starting a fresh one: its prior messages (if any) are loaded from
+  ## `memory` and used as the base of this turn's history, so a caller that
+  ## tracks a stable session ID across calls (e.g. one Discord thread) gets
+  ## real multi-turn continuity. The session row is created on first use if
+  ## it doesn't exist yet (the caller may mint the ID before any messages
+  ## have been logged against it).
+  let sid =
+    if resumeSessionId.len > 0: resumeSessionId
+    else: memory.newSession()
   result.sessionId = sid
   result.stopReason = asrError    # overwritten below
 
-  # Build the initial message stack: system + user.
   var messages: seq[ChatMessage] = @[]
-  if agentCfg.systemPrompt.len > 0:
+  if resumeSessionId.len > 0:
+    memory.ensureSession(sid)
+    messages = memory.getHistory(sid)
+
+  # First turn on this session: seed the system prompt.
+  if messages.len == 0 and agentCfg.systemPrompt.len > 0:
     let sysMsg = ChatMessage(role: crSystem, content: agentCfg.systemPrompt)
     messages.add(sysMsg)
     memory.appendMessage(sid, sysMsg)

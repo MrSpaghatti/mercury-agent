@@ -1,7 +1,7 @@
 # Mercury Agent — Project Roadmap
 
-**Last updated**: July 19, 2026
-**Current state**: All planned phases complete (460 tests, CI green on Nim 2.0.8 + 2.2.2). 7 long-horizon tasks — 2 done, 5 remaining.
+**Last updated**: July 20, 2026
+**Current state**: All planned phases complete (479 tests, CI green on Nim 2.0.8 + 2.2.2). 7 long-horizon tasks — 2 done, 5 remaining.
 
 ---
 
@@ -46,7 +46,7 @@ Detailed implementation specs in `plans/task-*.md`. Recommended execution order:
 
 | Package | Test Files | Tests | Status |
 |---------|-----------|-------|--------|
-| mercury_core | 22 | 355 | ✅ All pass |
-| mercury_agent | 6 | 82 | ✅ All pass |
-| mercury_code | 1 | 23 | ✅ All pass |
-| **Total** | **29** | **460** | **✅ 0 FAILED** |
+| mercury_core | 21 | 352 | ✅ All pass |
+| mercury_agent | 7 | 98 | ✅ All pass |
+| mercury_code | 1 | 29 | ✅ All pass |
+| **Total** | **29** | **479** | **✅ 0 FAILED** |

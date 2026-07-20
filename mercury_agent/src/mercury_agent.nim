@@ -196,6 +196,17 @@ proc makeDelegateParams*(): JsonNode =
   p["required"].add(%"task")
   p
 
+proc childGetsDelegateTool*(persona: PersonaConfig; llmConfigured: bool): bool =
+  ## Whether a child agent spawned for `persona` should itself get a
+  ## `delegate` tool (i.e. whether it may delegate further). Requires both
+  ## the persona opting in via `delegate_enabled` (an operator can use this
+  ## to build a persona that must not spawn sub-agents) and a real LLM
+  ## being configured — a fake/placeholder LLM can't run a further child
+  ## agent even if the persona would otherwise allow it. Pulled out as a
+  ## pure function so the gating decision itself is directly testable
+  ## without needing a live delegation round-trip.
+  persona.delegateEnabled and llmConfigured
+
 proc makeDelegateExecuteProc*(): auto =
   ## Returns a gcsafe closure that captures the current AgentGlobals ref.
   ## The ref object is GC-safe to capture, and the closure accesses globals
@@ -301,7 +312,8 @@ proc makeDelegateExecuteProc*(): auto =
     gGlobals.delegationConfig = childCfg.delegation
     var childReg = newToolRegistry()
     childReg.register(shellTool())
-    if not gGlobals.isNil and gGlobals.llmClient.baseUrl.len > 0:
+    let llmConfigured = not gGlobals.isNil and gGlobals.llmClient.baseUrl.len > 0
+    if childGetsDelegateTool(persona, llmConfigured):
       childReg.register(makeDelegateTool())
     gGlobals.delegationConfig = savedDc
     if parentCfg.mcpServers.len > 0:

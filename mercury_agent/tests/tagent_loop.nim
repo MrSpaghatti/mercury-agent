@@ -464,7 +464,123 @@ suite "agent_loop: memory logging":
       smallAgentConfig(), llm, reg, mem, userInput = "ping")
     check res.sessionId.startsWith("sess_")
     let history = mem.getHistory(res.sessionId)
-    check history.len >= 2     # at minimum: user + assistant
+    check history.len == 3
+    check history[0].role == crSystem
+    check history[1].role == crUser
+    check history[1].content == "ping"
+    check history[2].role == crAssistant
+    check history[2].content == "ok"
+
+suite "agent_loop: resumeSessionId":
+  test "second call with the same resumeSessionId sees the first call's history":
+    let h = newHarness()
+    startHarness(h)
+    defer: stopHarness(h)
+
+    h.enqueueText("first answer")
+    h.enqueueText("second answer")
+
+    let llm = makeClient(h)
+    let reg = newToolRegistry()
+    var mem = newMemory(":memory:")
+    defer: mem.close()
+
+    let cfg = smallAgentConfig()
+    let sid = "sess_shared_thread"
+
+    let res1 = runAgentLoop(
+      cfg, llm, reg, mem, userInput = "first message",
+      resumeSessionId = sid)
+    check res1.sessionId == sid
+    check res1.text == "first answer"
+
+    let res2 = runAgentLoop(
+      cfg, llm, reg, mem, userInput = "second message",
+      resumeSessionId = sid)
+    check res2.sessionId == sid
+    check res2.text == "second answer"
+
+    # Both turns landed in the SAME session, in order: system, user1,
+    # assistant1, user2, assistant2. A single system prompt is seeded only
+    # once, on the first turn.
+    let history = mem.getHistory(sid)
+    check history.len == 5
+    check history[0].role == crSystem
+    check history[1].role == crUser
+    check history[1].content == "first message"
+    check history[2].role == crAssistant
+    check history[2].content == "first answer"
+    check history[3].role == crUser
+    check history[3].content == "second message"
+    check history[4].role == crAssistant
+    check history[4].content == "second answer"
+
+    # The second LLM request must have carried the first turn's messages —
+    # this is the actual "continuity" property, not just a shared DB row.
+    check h.server.getLastRequestBody().contains("first message")
+    check h.server.getLastRequestBody().contains("first answer")
+
+  test "resumeSessionId with no prior history behaves like a fresh session":
+    let h = newHarness()
+    startHarness(h)
+    defer: stopHarness(h)
+
+    h.enqueueText("hello")
+
+    let llm = makeClient(h)
+    let reg = newToolRegistry()
+    var mem = newMemory(":memory:")
+    defer: mem.close()
+
+    let sid = "sess_brand_new_thread"
+    let res = runAgentLoop(
+      smallAgentConfig(), llm, reg, mem, userInput = "hi",
+      resumeSessionId = sid)
+
+    check res.sessionId == sid
+    check res.text == "hello"
+    let history = mem.getHistory(sid)
+    check history.len == 3  # system, user, assistant
+    check history[0].role == crSystem
+
+  test "two different Discord threads stay isolated — no cross-talk":
+    ## Guards the realistic regression this fix could introduce: a second
+    ## thread's turn accidentally seeing a *different* thread's history.
+    ## Simulates two separate Discord threads (distinct resumeSessionId
+    ## per thread) interleaved on the same Memory store, as would happen
+    ## with two users talking to the bot in different channels at once.
+    let h = newHarness()
+    startHarness(h)
+    defer: stopHarness(h)
+
+    h.enqueueText("thread A: got it")
+    h.enqueueText("thread B: got it")
+
+    let llm = makeClient(h)
+    let reg = newToolRegistry()
+    var mem = newMemory(":memory:")
+    defer: mem.close()
+
+    let cfg = smallAgentConfig()
+    discard runAgentLoop(
+      cfg, llm, reg, mem, userInput = "thread A: my name is Alice",
+      resumeSessionId = "sess_thread_a")
+    discard runAgentLoop(
+      cfg, llm, reg, mem, userInput = "thread B: my name is Bob",
+      resumeSessionId = "sess_thread_b")
+
+    let historyA = mem.getHistory("sess_thread_a")
+    let historyB = mem.getHistory("sess_thread_b")
+
+    # Each thread's history contains only its own turn, never the other's.
+    check historyA.len == 3  # system, user, assistant
+    check historyB.len == 3
+    check historyA[1].content == "thread A: my name is Alice"
+    check historyB[1].content == "thread B: my name is Bob"
+    for msg in historyA:
+      check "Bob" notin msg.content
+    for msg in historyB:
+      check "Alice" notin msg.content
 
 suite "agent_loop: convenience overload":
   test "MercuryConfig overload threads maxLoopIterations through":
@@ -472,15 +588,22 @@ suite "agent_loop: convenience overload":
     startHarness(h)
     defer: stopHarness(h)
 
-    h.enqueueText("done")
+    # The mock never produces a final text answer, so the only way this
+    # run can stop is by hitting maxIterations — proving the overload
+    # actually wires MercuryConfig.maxLoopIterations into AgentConfig
+    # rather than falling back to the (much larger) default.
+    for i in 0 ..< 4:
+      h.enqueueToolCall("echo", %*{"text": "iter-" & $i})
+    h.setFallbackText("should-not-be-used")
 
     var mc = defaultConfig()
     mc.maxLoopIterations = 4
     let llm = makeClient(h)
     let reg = newToolRegistry()
+    reg.register(echoTool())
     var mem = newMemory(":memory:")
     defer: mem.close()
 
     let res = runAgentLoop(mc, llm, reg, mem, userInput = "hi")
-    check res.stopReason == asrFinished
-    check res.text == "done"
+    check res.stopReason == asrMaxIterations
+    check res.stats.totalTurns == 4

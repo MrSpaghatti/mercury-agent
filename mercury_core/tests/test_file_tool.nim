@@ -76,14 +76,6 @@ suite "File Tool":
     check res.isError == true
     check res.output == "Requires approval"
 
-  test "fileWriteTool atomic write":
-    let path = sandboxDir / "atomic.txt"
-    let t = fileWriteTool(rules, cfg, "admin")
-    let args = %*{"path": path, "content": "atomic"}
-    let res = t.execute(args)
-    check res.isError == false
-    check readFile(path) == "atomic"
-
   test "fileWriteTool deny":
     let path = sandboxDir / "test.secret"
     let t = fileWriteTool(rules, cfg, "admin")

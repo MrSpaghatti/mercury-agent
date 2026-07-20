@@ -1,9 +1,10 @@
 ## Tests for mercury_core/mcp_client.nim
 
-import std/[unittest, json, asyncdispatch, httpclient]
+import std/[unittest, json, asyncdispatch, httpclient, strutils]
 import mercury_core/mcp_client
 import mercury_core/config
 import mock_mcp_server
+import mock_llm_server
 
 # ---------------------------------------------------------------------------
 # Tests: config parsing
@@ -64,40 +65,22 @@ suite "json_rpc helpers":
 # Tests: McpTool type
 # ---------------------------------------------------------------------------
 
-suite "mcp_tool type":
-  test "McpTool stores all fields":
-    let tool = McpTool(
-      server: "http://localhost:8080",
-      name: "test_tool",
-      description: "A test tool",
-      inputSchema: %*{"type": "object", "properties": {"arg": {"type": "string"}}},
-    )
-    check tool.server == "http://localhost:8080"
-    check tool.name == "test_tool"
-    check tool.description == "A test tool"
-    check tool.inputSchema["type"].getStr() == "object"
+## McpTool is a plain data object with no derived/computed fields — a
+## "stores all fields" test would only prove Nim's object literal syntax
+## works, so it's intentionally not covered here; `listTools` below proves
+## McpTool values are actually populated correctly from server responses.
 
 # ---------------------------------------------------------------------------
 # Tests: McpError hierarchy
 # ---------------------------------------------------------------------------
 
 suite "mcp_error hierarchy":
-  test "McpConnectionError has serverUrl":
+  test "McpConnectionError has serverUrl and is a CatchableError/McpError":
     var err = newException(McpConnectionError, "connection refused")
     err.serverUrl = "http://localhost:9999"
     check err.serverUrl == "http://localhost:9999"
     check err of CatchableError
     check err of McpError
-
-  test "McpProtocolError has serverUrl":
-    var err = newException(McpProtocolError, "invalid response")
-    err.serverUrl = "http://localhost:8080"
-    check err.serverUrl == "http://localhost:8080"
-
-  test "McpToolNotFoundError has serverUrl":
-    var err = newException(McpToolNotFoundError, "tool not found")
-    err.serverUrl = "http://localhost:8080"
-    check err.serverUrl == "http://localhost:8080"
 
 # ---------------------------------------------------------------------------
 # Tests: McpClient construction
@@ -255,3 +238,87 @@ suite "mcp protocol integration":
     discard waitFor mcpPost(cl, mock.url(), $jsonRpcRequest("initialize"))
     discard waitFor mcpPost(cl, mock.url(), $jsonRpcRequest("tools/list"))
     check mock.requestCount == 2
+
+# ---------------------------------------------------------------------------
+# Real client round-trip tests
+#
+# Everything above drives the mock server directly over raw HTTP — it never
+# calls mcp_client.nim's own initialize/listTools/callTool, so a parsing bug
+# in the real client would go undetected. mcp_client's HttpClient is a
+# *blocking* std/httpclient, and mock_mcp_server.nim is a single-threaded
+# async server sharing this test's event loop, so the two can't be driven
+# together on one thread (same issue documented in mock_llm_server.nim).
+# Reuse mock_llm_server's generic thread-based raw-HTTP mock instead — MCP
+# is just JSON-RPC over HTTP POST, so it doesn't need MCP-specific behavior,
+# just a FIFO queue of responses on its own OS thread.
+# ---------------------------------------------------------------------------
+
+const InitSuccessBody =
+  """{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{"name":"mock","version":"1.0"}}}"""
+
+proc newInitializedClient(server: MockServer): McpClient =
+  ## Enqueues a successful `initialize` handshake (2 requests: the call
+  ## itself, plus the best-effort "initialized" notification it always
+  ## sends afterward) and returns a client that has already completed it.
+  server.enqueue("200 OK", InitSuccessBody)
+  server.enqueue("200 OK", "{}")
+  result = newMcpClient(newMcpServerConfig(url = baseUrlFor(server)))
+  discard result.initialize()
+
+suite "mcp_client real round-trip (thread-based mock server)":
+  test "initialize performs the real handshake and parses the protocol version":
+    let server = startMockServer()
+    defer: stopMockServer(server)
+    server.enqueue("200 OK", InitSuccessBody)
+    server.enqueue("200 OK", "{}")
+    let client = newMcpClient(newMcpServerConfig(url = baseUrlFor(server)))
+
+    let version = client.initialize()
+
+    check version == "2024-11-05"
+    check client.protocolVersion == "2024-11-05"
+    check server.requestCount == 2
+
+  test "listTools parses real tool definitions returned by the server":
+    let server = startMockServer()
+    defer: stopMockServer(server)
+    let client = newInitializedClient(server)
+    server.enqueue("200 OK", """{"jsonrpc":"2.0","id":2,"result":{"tools":[
+      {"name":"read_file","description":"Read a file","inputSchema":{"type":"object"}},
+      {"name":"write_file","description":"Write a file","inputSchema":{"type":"object"}}
+    ]}}""")
+
+    let tools = client.listTools()
+
+    check tools.len == 2
+    check tools[0].name == "read_file"
+    check tools[0].description == "Read a file"
+    check tools[1].name == "write_file"
+
+  test "callTool returns the text content the server actually sent":
+    let server = startMockServer()
+    defer: stopMockServer(server)
+    let client = newInitializedClient(server)
+    server.enqueue("200 OK",
+      """{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"the answer is 42"}]}}""")
+
+    let output = client.callTool("add", %*{"a": 1, "b": 41})
+
+    check output == "the answer is 42"
+    check "\"a\":1" in server.requestBodies[^1]
+    check "\"b\":41" in server.requestBodies[^1]
+
+  test "a JSON-RPC error response raises McpProtocolError with the server's message":
+    let server = startMockServer()
+    defer: stopMockServer(server)
+    server.enqueue("200 OK",
+      """{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"boom"}}""")
+    let client = newMcpClient(newMcpServerConfig(url = baseUrlFor(server)))
+
+    var caught = false
+    try:
+      discard client.initialize()
+    except McpProtocolError as e:
+      caught = true
+      check "boom" in e.msg
+    check caught

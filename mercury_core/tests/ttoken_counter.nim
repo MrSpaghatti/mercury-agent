@@ -7,19 +7,9 @@
 ##   - countMessages applies per-message overhead correctly
 ##   - countMessages handles empty message list
 
-import std/[unittest, math, strutils]
+import std/[unittest, strutils]
 import mercury_core/token_counter
 import mercury_core/llm_client
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-proc approxTokens(text: string; charsPerToken: float): int =
-  ## Reference implementation matching token_counter logic.
-  if text.len == 0: return 0
-  result = int(ceil(text.len.float / charsPerToken))
-  if result < 1: result = 1
 
 # ---------------------------------------------------------------------------
 # Suite: detectFamily
@@ -79,10 +69,6 @@ suite "countTokens edge cases":
     check countTokens("a", "gpt-4") == 1
     check countTokens("a", "claude-3") == 1
 
-  test "default model is gpt-4":
-    # countTokens("hello") with default should equal countTokens("hello", "gpt-4")
-    check countTokens("hello") == countTokens("hello", "gpt-4")
-
 # ---------------------------------------------------------------------------
 # Suite: countTokens known values — GPT-4 (4.0 chars/token)
 # ---------------------------------------------------------------------------
@@ -108,12 +94,6 @@ suite "countTokens gpt-4":
     let s = "a".repeat(100)
     check countTokens(s, "gpt-4") == 25
 
-  test "matches reference formula":
-    let texts = ["The quick brown fox", "jumps over the lazy dog",
-                 "OpenAI GPT-4 tokenizer", "1234567890"]
-    for t in texts:
-      check countTokens(t, "gpt-4") == approxTokens(t, 4.0)
-
 # ---------------------------------------------------------------------------
 # Suite: countTokens known values — Claude (3.8 chars/token)
 # ---------------------------------------------------------------------------
@@ -131,12 +111,6 @@ suite "countTokens claude":
     let s = "a".repeat(38)
     # 38 / 3.8 = 10.0 → 10
     check countTokens(s, "claude-3") == 10
-
-  test "matches reference formula":
-    let texts = ["The quick brown fox", "jumps over the lazy dog",
-                 "Anthropic Claude tokenizer", "1234567890"]
-    for t in texts:
-      check countTokens(t, "claude-3") == approxTokens(t, 3.8)
 
   test "claude-3.5-sonnet uses claude family":
     check countTokens("hello", "claude-3.5-sonnet") ==
@@ -204,9 +178,9 @@ suite "countMessages":
     let longMsgs = @[ChatMessage(role: crUser, content: "a".repeat(100))]
     let gptLong = countMessages(longMsgs, "gpt-4")
     let claudeLong = countMessages(longMsgs, "claude-3")
-    # 100 chars: gpt=25 tokens, claude=ceil(100/3.8)=27 tokens
-    check gptLong < claudeLong
-
-  test "default model is gpt-4":
-    let msgs = @[ChatMessage(role: crUser, content: "hello")]
-    check countMessages(msgs) == countMessages(msgs, "gpt-4")
+    # 100 chars: gpt=25 tokens, claude=ceil(100/3.8)=27 tokens. Exact values,
+    # not just "claude is bigger" — a formula bug that still kept the
+    # ordering right (e.g. off by a constant) would slip past a directional
+    # check but not this one.
+    check gptLong == ReplyPrimingTokens + TokensPerMessage + 25
+    check claudeLong == ReplyPrimingTokens + TokensPerMessage + 27

@@ -130,16 +130,62 @@ suite "parseNimCompilerOutput":
 
 suite "defaultCodingHarnessConfig":
 
-  test "defaults are sensible":
+  test "no build/test command configured by default":
+    # The rest of defaultCodingHarnessConfig()'s literal values (timeouts,
+    # allowedExtensions, etc.) aren't worth pinning here — they'd just
+    # mirror the constant back at itself. This one has real behavioral
+    # weight: compileTool/testTool below key their "not configured" error
+    # off buildCmd/testCmd being empty by default.
     let cfg = defaultCodingHarnessConfig()
-    check: cfg.sandboxRoot == ""
-    check: cfg.allowedExtensions.len > 0
-    check: ".nim" in cfg.allowedExtensions
     check: cfg.buildCmd == ""
     check: cfg.testCmd == ""
-    check: cfg.buildTimeoutMs == 120_000
-    check: cfg.testTimeoutMs == 300_000
-    check: cfg.maxOutputBytes == 512 * 1024
+
+# ---------------------------------------------------------------------------
+# compileTool / testTool — the actual agent-facing Tool wrappers around
+# runCompile. Previously untested: runCompile itself was covered above, but
+# nothing proved these Tools are wired to call it and format its result.
+# ---------------------------------------------------------------------------
+
+suite "compileTool and testTool":
+
+  test "compileTool runs the configured build command and reports success":
+    var cfg = defaultCodingHarnessConfig()
+    cfg.buildCmd = "echo build ok"
+    let res = compileTool(cfg).execute(%*{})
+    check: not res.isError
+    check: "build ok" in res.output
+
+  test "compileTool reports failure when the build command exits non-zero":
+    var cfg = defaultCodingHarnessConfig()
+    cfg.buildCmd = "sh -c 'echo broke; exit 1'"
+    let res = compileTool(cfg).execute(%*{})
+    check: res.isError
+    check: "broke" in res.output
+
+  test "compileTool with no build command configured returns a clear error":
+    let cfg = defaultCodingHarnessConfig()  # buildCmd is "" by default
+    let res = compileTool(cfg).execute(%*{})
+    check: res.isError
+    check: "no build command configured" in res.output
+
+  test "testTool runs the configured test command and reports success":
+    var cfg = defaultCodingHarnessConfig()
+    cfg.testCmd = "echo tests passed"
+    let res = testTool(cfg).execute(%*{})
+    check: not res.isError
+    check: "tests passed" in res.output
+
+  test "testTool reports failure when the test command exits non-zero":
+    var cfg = defaultCodingHarnessConfig()
+    cfg.testCmd = "sh -c 'exit 1'"
+    let res = testTool(cfg).execute(%*{})
+    check: res.isError
+
+  test "testTool with no test command configured returns a clear error":
+    let cfg = defaultCodingHarnessConfig()
+    let res = testTool(cfg).execute(%*{})
+    check: res.isError
+    check: "no test command configured" in res.output
 
 # ---------------------------------------------------------------------------
 # File tool sandbox enforcement

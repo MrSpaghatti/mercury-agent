@@ -272,13 +272,11 @@ suite "chatCompletion request shape":
   setup:
     resetMock(sharedServer)
 
-  test "request body is well-formed JSON with required keys":
-    sharedServer.enqueue("200 OK", SuccessBody)
-    let client = makeClient(sharedServer)
-    discard client.chatCompletion("ping")
-    let req = parseJson(sharedServer.requestBodies[0])
-    check req.hasKey("model")
-    check req.hasKey("messages")
+  ## "request body has model/messages keys" isn't covered as its own test:
+  ## "sends prompt as final user message" and "appends prompt after
+  ## history" above already index into `reqJson["model"]`/`["messages"]`
+  ## (which raises if the key is absent) and additionally check the real
+  ## values, so a dedicated hasKey-only test would add nothing.
 
 # ---------------------------------------------------------------------------
 # Suite: chatCompletionStream (SSE)

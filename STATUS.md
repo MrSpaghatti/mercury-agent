@@ -68,7 +68,7 @@ AI agent with:
 | Item | Status |
 |------|--------|
 | `make build` (core + agent + code) | ✅ Compiles (see SSL note below) |
-| `make test` (core + agent + code) | ✅ All 460 tests pass, 0 FAILED |
+| `make test` (core + agent + code) | ✅ All 479 tests pass, 0 FAILED |
 | `nim check` (core + agent) | ✅ No static analysis errors |
 | `.env` / `.env.example` | ✅ Configured |
 | `.gitignore` | ✅ Covers all build artifacts |
@@ -91,15 +91,6 @@ AI agent with:
 `tllm_client.nim` starts a mock TCP server in a thread that doesn't join
 cleanly on process exit. The test passes but hangs for ~2 seconds at
 shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
-
-### 🟡 Delegation slot accounting conflates depth and count
-
-`delegate.useDelegationSlot` decrements only `maxDepth`, so a sequence of
-non-nested delegations consumes nesting "depth" and `maxDelegationsPerRun`
-is never actually decremented. The effect is **fail-safe** (delegation stops
-sooner than configured, never later), so it is not a safety hole, but the two
-bounds are muddled and should be separated when the delegation semantics are
-revisited.
 
 ---
 
@@ -183,14 +174,14 @@ revisited.
 
 | Package | Test files | Tests | Status |
 |---------|-----------|-------|--------|
-| mercury_core (Wave 1) | tconfig, tllm_client, ttoken_counter, tmemory | 96 | ✅ All pass |
-| mercury_core (Wave 2) | ttool_registry, test_mock_server | 18 | ✅ All pass |
-| mercury_core (Discord) | test_permission, test_file_*, test_rate_limit, test_thread_*, test_agent_dispatcher, test_message_chunker, test_discord_*, test_persona, test_e2e_discord | ~200 | ✅ All pass |
+| mercury_core (Wave 1) | tconfig, tllm_client, ttoken_counter, tmemory | 126 | ✅ All pass |
+| mercury_core (Wave 2) | ttool_registry, test_mock_server | 22 | ✅ All pass |
+| mercury_core (Discord) | test_permission, test_file_*, test_rate_limit, test_thread_*, test_daemon_delegation, test_message_chunker, test_discord_*, test_e2e_discord | 149 | ✅ All pass |
 | mercury_core (MCP) | test_mcp_client, test_mcp_tool | 36 | ✅ All pass |
-| mercury_core (Persona) | test_persona | 22 | ✅ All pass |
-| mercury_agent | tcli, tagent_loop, tintegration, test_shell_tool, tbench | 82 | ✅ All pass |
-| mercury_code | tcode_runner | 23 | ✅ All pass |
-| **Total** | **29 test files** | **460** | **✅ 0 FAILED** |
+| mercury_core (Persona) | test_persona | 19 | ✅ All pass |
+| mercury_agent | tcli, tagent_loop, tintegration, tdelegate_tool, tweb_server, test_shell_tool, tbench | 98 | ✅ All pass |
+| mercury_code | tcode_runner | 29 | ✅ All pass |
+| **Total** | **29 test files** | **479** | **✅ 0 FAILED** |
 
 ---
 

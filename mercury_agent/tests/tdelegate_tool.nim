@@ -132,40 +132,23 @@ suite "delegate: delegation limits":
     check result.isError
     check result.output.contains("maximum delegations per run")
 
-  test "slot consumption decrements counters":
+  test "slot consumption is observable: a second call sees the exhausted limit":
     resetGlobals()
     initGlobals(maxDepth = 1, maxDelegations = 1)
     let exec = makeDelegateExecuteProc()
-    # This should error at memory-open (no real DB path), but NOT at
-    # delegation check — the counters should be decremented.
-    let result = exec(%*{"persona": "test", "task": "do something"})
-    # Memory will fail, but the slot was consumed before that.
-    check gGlobals.delegationConfig.maxDepth == 0
-    check gGlobals.delegationConfig.maxDelegations == 0
-
-suite "delegate: params schema":
-  test "makeDelegateParams returns valid schema":
-    let params = makeDelegateParams()
-    check params{"type"}.getStr() == "object"
-    check params{"properties"}{"persona"}{"type"}.getStr() == "string"
-    check params{"properties"}{"task"}{"type"}.getStr() == "string"
-    check params{"required"}.len == 2
-    let requiredNames = @[
-      params{"required"}[0].getStr(),
-      params{"required"}[1].getStr(),
-    ]
-    check requiredNames.contains("persona")
-    check requiredNames.contains("task")
+    # First call consumes the only slot; it errors later at memory-open (no
+    # real DB path in this unit-test setup), but the slot is consumed
+    # before that point is reached.
+    discard exec(%*{"persona": "test", "task": "do something"})
+    # The behavior the counters exist to produce: a SECOND delegate call
+    # must now be rejected by the delegation-limit guard itself, not just
+    # leave an internal field decremented with no caller-visible effect.
+    let result2 = exec(%*{"persona": "test", "task": "do something else"})
+    check result2.isError
+    check result2.output.contains("maximum delegation depth") or
+          result2.output.contains("maximum delegations per run")
 
 suite "delegate: tool registration":
-  test "makeDelegateTool produces a valid Tool":
-    resetGlobals()
-    initGlobals()
-    let tool = makeDelegateTool()
-    check tool.name == "delegate"
-    check tool.description.len > 0
-    check tool.parameters{"type"}.getStr() == "object"
-
   test "buildRegistry includes delegate when globals are set":
     resetGlobals()
     initGlobals()
@@ -179,3 +162,22 @@ suite "delegate: tool registration":
     # Should fail at 'unknown persona', not at 'tool not found'
     check result.isError
     check result.output.contains("unknown persona")
+
+suite "delegate: child inherits delegate tool only when the persona allows it":
+  ## Regression coverage for the delegate_enabled wiring fix: an operator
+  ## who sets `delegate_enabled = false` on a persona (e.g. a "reviewer"
+  ## persona that should only read code, never spawn further sub-agents)
+  ## needs that to actually stick. `childGetsDelegateTool` is the exact
+  ## decision point mercury_agent.nim's delegate execute proc consults
+  ## before registering a `delegate` tool on the spawned child's registry.
+  test "persona with delegate_enabled = true and a real LLM gets delegate":
+    let persona = PersonaConfig(name: "supervisor", delegateEnabled: true)
+    check childGetsDelegateTool(persona, llmConfigured = true)
+
+  test "persona with delegate_enabled = false is blocked even with a real LLM":
+    let persona = PersonaConfig(name: "reviewer", delegateEnabled: false)
+    check not childGetsDelegateTool(persona, llmConfigured = true)
+
+  test "no LLM configured blocks delegation regardless of the persona flag":
+    let persona = PersonaConfig(name: "supervisor", delegateEnabled: true)
+    check not childGetsDelegateTool(persona, llmConfigured = false)

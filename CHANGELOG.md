@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Testing
+
+- **Full test-suite quality pass.** Reviewed every test in the suite (not
+  just ones touched by recent fixes) against three criteria: does it earn
+  its place (not redundant/tautological), does it verify the actual
+  behavior at stake (not a shallow proxy like "something non-empty was
+  returned"), and does the feature it covers have at least one real
+  end-to-end test through its actual entry point, not just unit/mock-level
+  coverage. Net result: 30 low-value tests cut (exact duplicates, and
+  checks that can't fail short of a compiler bug), ~15 weak assertions
+  strengthened to check real content/values, and real coverage added for
+  gaps that had none — most notably: `mcp_client.nim`'s `initialize`/
+  `listTools`/`callTool` had zero test coverage of their actual JSON
+  parsing (every existing test drove the mock server directly, bypassing
+  the real client entirely); `code_tool.nim`'s `compileTool`/`testTool`
+  wrappers (what the coding-harness agent actually calls) were completely
+  untested despite `runCompile` itself being well covered; `persona.nim`'s
+  `scopedRegistry` (used by both the delegate and persona-task spawn
+  paths) had a test with its name on it that never actually called it;
+  and the Discord bot had no test proving DMs and non-mentioning channel
+  chatter are correctly ignored. Deleted `test_agent_dispatcher.nim`
+  (fully subsumed by `test_daemon_delegation.nim`'s placeholder-path
+  suite, with weaker assertions). Net: 488 → 479 tests — fewer, but each
+  one now pulling real weight.
+
+### Fixed
+
+- **Discord thread continuity was completely non-functional.** `runAgentLoop`
+  unconditionally called `memory.newSession()` on every invocation, so
+  `agent_dispatcher.dispatchAgent` never actually resumed the session ID
+  that `discord.nim` resolves via `thread_mapping.nim` for an existing
+  thread — every message in a Discord thread started a brand-new,
+  historyless conversation, even though the bot told users "Continuing from
+  previous session." `runAgentLoop` now takes an optional
+  `resumeSessionId`: when set, it loads that session's prior history via
+  `memory.getHistory()` before appending the new turn, and creates the
+  session row on first use if it doesn't exist yet
+  (`memory.ensureSession()`). `dispatchAgent` passes `request.sessionId`
+  through. Regression tests added in `tagent_loop.nim` (resume-with-history
+  and cross-thread isolation at the `runAgentLoop` level),
+  `test_daemon_delegation.nim` (resume across two real dispatches through a
+  file-backed DB), and `test_e2e_discord.nim` (a full user-facing scenario:
+  two real messages through `bot.onMessageCreate` in the same thread against
+  a mock LLM, asserting the second reply and the second outbound LLM request
+  both reflect what the user said in the first message).
+
+- **`PersonaConfig.delegateEnabled` was dead.** Its TOML defaulting logic
+  couldn't distinguish "not set" from "explicitly `false`" (both are a
+  `bool`'s Nim zero-value), so any persona that didn't set
+  `delegate_enabled` silently ended up with delegation *disabled* — the
+  opposite of the documented default. The flag was also never read
+  anywhere to actually gate delegation. Fixed: `loadPersonasFromStream`
+  now seeds each persona with `DefaultDelegateEnabled` (true) before
+  parsing, and the delegate-tool spawn path in `mercury_agent.nim` only
+  registers a `delegate` tool for a child agent when its persona's
+  `delegateEnabled` is true. The gating decision was pulled into a small
+  pure `childGetsDelegateTool` proc so it's directly unit-testable; new
+  tests in `test_persona.nim` (TOML default/explicit-true/explicit-false)
+  and `tdelegate_tool.nim` (the gating decision itself) cover it.
+
 ### Added
 
 - **Streaming responses (SSE).** `chatCompletionStream` proc added to

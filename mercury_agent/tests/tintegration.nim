@@ -357,16 +357,8 @@ suite "integration: full pipeline (config + client + registry + memory + agent)"
 # ---------------------------------------------------------------------------
 
 suite "integration: config loading (toml + env + defaults)":
-
-  test "loadConfig returns defaults when nothing else is provided":
-    let cfg = loadConfig(
-      configPath = "/nonexistent/integration_config.toml",
-      envFilePath = "/nonexistent/integration.env",
-    )
-    check cfg.provider == DefaultProvider
-    check cfg.maxTokens == DefaultMaxTokens
-    check cfg.temperature == DefaultTemperature
-    check cfg.maxLoopIterations == DefaultMaxLoopIterations
+  # "defaults with no files present" is covered by tconfig.nim's
+  # "loadConfig defaults" suite — nothing integration-specific about it.
 
   test "TOML file overrides defaults":
     let tmpDir = getTempDir() / "mercury_integration_toml"

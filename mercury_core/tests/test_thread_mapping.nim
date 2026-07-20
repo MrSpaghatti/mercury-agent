@@ -166,7 +166,9 @@ suite "last_active_at tracking":
     defer: db.close()
     setThreadMapping(db, "thread_1", "sess_old", "channel_x", "guild_g")
     let row1 = db.getRow(sql"SELECT last_active_at FROM discord_threads WHERE thread_id = ?", "thread_1")
+    sleep(1100)  # ensure a different second-level timestamp
     setThreadMapping(db, "thread_1", "sess_new", "channel_x", "guild_g")
     let row2 = db.getRow(sql"SELECT last_active_at FROM discord_threads WHERE thread_id = ?", "thread_1")
-    # last_active_at should be updated (newer or equal timestamp)
-    check row2[0] >= row1[0]
+    # Strictly newer, not just "not older" — a bug that forgot to bump
+    # last_active_at on upsert would still pass a `>=` check.
+    check row2[0] > row1[0]

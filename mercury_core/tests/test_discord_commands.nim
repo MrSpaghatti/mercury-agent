@@ -20,7 +20,7 @@ suite "Discord Command Handler":
   test "handleCommand returns unknown command for empty input":
     let cfg = makeAdminConfig()
     let r = handleCommand("", "", "admin1", cfg)
-    check r.response.len > 0
+    check "Unknown" in r.response or "unknown" in r.response
 
   test "handleCommand returns unknown command for unrecognized command":
     let cfg = makeAdminConfig()
@@ -80,8 +80,8 @@ suite "Discord Command Handler":
   test "!config reload returns placeholder response for admin":
     let cfg = makeAdminConfig()
     let r = handleCommand("config", "reload", "admin1", cfg)
-    check r.response.len > 0
     # Reload doesn't actually reload from disk in this module; it signals intent
+    check "reload" in r.response.toLowerAscii
     check r.updatedConfig.isNone
 
   # ── !config allowlist ────────────────────────────────────────────────
@@ -156,7 +156,7 @@ suite "Discord Command Handler":
   test "!admin restart returns placeholder for admin":
     let cfg = makeAdminConfig()
     let r = handleCommand("admin", "restart", "admin1", cfg)
-    check r.response.len > 0
+    check "restart" in r.response.toLowerAscii
     check r.updatedConfig.isNone
 
   test "!admin reconnect requires admin":
@@ -168,7 +168,7 @@ suite "Discord Command Handler":
   test "!admin reconnect returns placeholder for admin":
     let cfg = makeAdminConfig()
     let r = handleCommand("admin", "reconnect", "admin1", cfg)
-    check r.response.len > 0
+    check "reconnect" in r.response.toLowerAscii
     check r.updatedConfig.isNone
 
   test "!admin unknown subcommand":
@@ -194,7 +194,7 @@ suite "Discord Command Handler":
   test "!session info with id returns session details":
     let cfg = makeAdminConfig()
     let r = handleCommand("session", "info sess_123", "user1", cfg)
-    check r.response.len > 0
+    check "sess_123" in r.response
     check r.updatedConfig.isNone
 
   test "!session clear requires admin":
@@ -206,7 +206,7 @@ suite "Discord Command Handler":
   test "!session clear with id returns placeholder for admin":
     let cfg = makeAdminConfig()
     let r = handleCommand("session", "clear sess_123", "admin1", cfg)
-    check r.response.len > 0
+    check "sess_123" in r.response
     check r.updatedConfig.isNone
 
   test "!session clear requires session id":

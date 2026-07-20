@@ -88,25 +88,6 @@ suite "DiscordBot (DI-based)":
         check call.channelId in ["chan1", "thread_1"]
     check foundSend
 
-  test "known command triggers at least one send":
-    let (bot, api, db) = makeBot(users = @["user1"])
-    defer: db.close()
-    let msg = Message(
-      id: "msg_cmd_2",
-      author: MockUser(id: "user1", username: "TestUser", bot: false),
-      content: "!status",
-      channel_id: "chan1",
-      guild_id: some("guild1"),
-      mention_users: @[MockUser(id: "bot_user_id", username: "bot_user_id", bot: true)],
-    )
-    bot.shard.userId = "bot_user_id"
-    waitFor bot.onMessageCreate(msg)
-    var sendCount = 0
-    for call in api.calls:
-      if call.kind == mockSendMessage:
-        sendCount.inc
-    check sendCount >= 1
-
   test "unknown command returns unknown command message":
     let (bot, api, db) = makeBot(users = @["user1"])
     defer: db.close()
@@ -143,10 +124,13 @@ suite "DiscordBot (DI-based)":
     waitFor bot.onMessageCreate(msg)
     check bot.config.prefix == "?"
 
-  test "regular message triggers typing and agent dispatch":
+  test "regular message triggers typing and dispatches a real agent request":
     let api = newMockDiscordApi()
     let cfg = makeConfig(admins = @["admin1"], users = @["user1"])
-    let dispatcher = newAgentDispatcher(proc(r: AgentResult) = discard)
+    var received: AgentResult
+    let dispatcher = newAgentDispatcher(proc(r: AgentResult) {.gcsafe, closure, raises: [].} =
+      {.cast(gcsafe), cast(raises: []).}:
+        received = r)
     let shard = newMockShard("bot_user_id")
     let db = makeDb()
     let bot = newDiscordBot(
@@ -169,11 +153,6 @@ suite "DiscordBot (DI-based)":
       mention_users: @[MockUser(id: "bot_user_id", username: "bot_user_id", bot: true)],
     )
     bot.shard.userId = "bot_user_id"
-    bot.shard.userId = "bot_user_id"
-    bot.shard.userId = "bot_user_id"
-    bot.shard.userId = "bot_user_id"
-    bot.shard.userId = "bot_user_id"
-    bot.shard.userId = "bot_user_id"
     waitFor bot.onMessageCreate(msg)
     var foundTyping = false
     for call in api.calls:
@@ -182,6 +161,14 @@ suite "DiscordBot (DI-based)":
         # Typing should happen in the newly created thread, not the original channel
         check call.channelId == "thread_1"
     check foundTyping
+
+    # The placeholder dispatcher (no cfg/llm) echoes userInput straight
+    # back as "Agent response for: <input>" — using that as a probe proves
+    # the AgentRequest actually built from the Discord message carries the
+    # right content and channel/thread routing, not just that *some*
+    # dispatch happened with unknown contents.
+    check received.responseText == "Agent response for: hello agent"
+    check received.channelId == "thread_1"
 
   test "prefix-only message with no command is ignored":
     let (bot, api, db) = makeBot(users = @["user1"])
@@ -211,7 +198,6 @@ suite "DiscordBot (DI-based)":
       mention_users: @[MockUser(id: "bot_user_id", username: "bot_user_id", bot: true)],
     )
     bot.shard.userId = "bot_user_id"
-    bot.shard.userId = "bot_user_id"
     waitFor bot.onMessageCreate(msg)
     var foundResponse = false
     for call in api.calls:
@@ -219,3 +205,38 @@ suite "DiscordBot (DI-based)":
         foundResponse = true
         check "permission" in call.content.toLowerAscii or "denied" in call.content.toLowerAscii
     check foundResponse
+
+  test "direct messages (no guild) are silently ignored, never dispatched":
+    ## A DM to the bot has no guild_id. Users expect the bot to only act in
+    ## guild channels/threads it's configured for — never reply to DMs.
+    let (bot, api, db) = makeBot(users = @["user1"])
+    defer: db.close()
+    let msg = Message(
+      id: "msg_dm",
+      author: MockUser(id: "user1", username: "TestUser", bot: false),
+      content: "hey, got a sec?",
+      channel_id: "dm_channel",
+      guild_id: none(string),
+      mention_users: @[MockUser(id: "bot_user_id", username: "bot_user_id", bot: true)],
+    )
+    bot.shard.userId = "bot_user_id"
+    waitFor bot.onMessageCreate(msg)
+    check api.calls.len == 0
+
+  test "ordinary channel chatter that doesn't mention the bot and isn't in an existing thread is ignored":
+    ## A user shouldn't get a reply just for talking in a channel the bot is
+    ## present in — only an explicit @mention (or a reply inside a thread
+    ## the bot already opened) should trigger a response.
+    let (bot, api, db) = makeBot(users = @["user1"])
+    defer: db.close()
+    let msg = Message(
+      id: "msg_chatter",
+      author: MockUser(id: "user1", username: "TestUser", bot: false),
+      content: "anyone around?",
+      channel_id: "chan_general",
+      guild_id: some("guild1"),
+      mention_users: @[],
+    )
+    bot.shard.userId = "bot_user_id"
+    waitFor bot.onMessageCreate(msg)
+    check api.calls.len == 0

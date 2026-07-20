@@ -222,6 +222,23 @@ proc newSession*(m: Memory; metadata: string = "{}"): string =
   """, id, ts, ts, metadata)
   return id
 
+proc hasSession*(m: Memory; sessionId: string): bool =
+  ## True if a session row with this ID already exists.
+  let row = m.db.getRow(sql"SELECT id FROM sessions WHERE id = ?", sessionId)
+  row[0].len > 0
+
+proc ensureSession*(m: Memory; sessionId: string; metadata: string = "{}") =
+  ## Creates a session row with the given ID if one does not already exist.
+  ## Used to resume a caller-supplied session ID (e.g. a Discord thread's
+  ## mapped session) that may or may not have a row yet — the first turn in
+  ## a thread creates it, later turns reuse it.
+  if not m.hasSession(sessionId):
+    let ts = nowIso()
+    m.db.exec(sql"""
+      INSERT INTO sessions (id, created_at, updated_at, metadata)
+      VALUES (?, ?, ?, ?)
+    """, sessionId, ts, ts, metadata)
+
 proc appendMessage*(
     m: Memory;
     sessionId: string;
