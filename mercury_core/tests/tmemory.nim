@@ -297,6 +297,31 @@ suite "searchHistory":
     check results.len == 1
     check results[0].content == "hello world from nim"
 
+  test "queries with FTS operator characters do not raise":
+    # Ordinary text like "rm -rf" or "foo:bar" is invalid FTS5 syntax and
+    # previously crashed searchHistory with a DbError. It must now degrade
+    # to a literal, safe search instead of propagating.
+    var m = makeMemory()
+    defer: m.close()
+    let sid = m.newSession()
+    m.appendMessage(sid, userMsg("please run rm to delete the file"))
+    for q in ["rm -rf", "foo:bar", "\"unterminated", "NEAR(", "*", "a AND"]:
+      # Must not raise; result count is unimportant here.
+      discard m.searchHistory(q)
+
+  test "sanitized fallback still matches literal tokens":
+    var m = makeMemory()
+    defer: m.close()
+    let sid = m.newSession()
+    m.appendMessage(sid, userMsg("please run rm to delete the file"))
+    m.appendMessage(sid, userMsg("nothing relevant here"))
+    # "rm delete" is not valid as-is only if it were operators; here both are
+    # bare terms, but the mixed-operator form "rm -delete" exercises the
+    # sanitized AND fallback and should still find the message with both.
+    let results = m.searchHistory("rm -delete")
+    check results.len == 1
+    check results[0].content == "please run rm to delete the file"
+
 # ---------------------------------------------------------------------------
 # Suite: multiple Memory instances (isolation)
 # ---------------------------------------------------------------------------

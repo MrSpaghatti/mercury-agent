@@ -264,12 +264,20 @@ proc getHistory*(m: Memory; sessionId: string): seq[ChatMessage] =
     )
     result.add(msg)
 
-proc searchHistory*(m: Memory; query: string): seq[SearchResult] =
-  ## Full-text searches all message content using FTS5.
-  ## Returns matching rows ordered by relevance (FTS5 rank).
+proc sanitizeFtsQuery(query: string): string =
+  ## Rewrites an arbitrary search string into a valid FTS5 query by wrapping
+  ## each whitespace-delimited token as a quoted string literal (embedded
+  ## double-quotes are doubled per FTS5 rules) and joining them with a space,
+  ## which FTS5 treats as an implicit AND. This makes inputs that contain FTS5
+  ## operators or punctuation (e.g. "rm -rf", "foo:bar", a lone quote) safe to
+  ## match literally instead of raising a syntax error.
+  var parts: seq[string] = @[]
+  for tok in query.splitWhitespace():
+    parts.add("\"" & tok.replace("\"", "\"\"") & "\"")
+  result = parts.join(" ")
+
+proc runFtsSearch(m: Memory; matchExpr: string): seq[SearchResult] =
   result = @[]
-  if query.len == 0:
-    return
   for row in m.db.fastRows(sql"""
     SELECT m.session_id,
            m.id,
@@ -281,16 +289,37 @@ proc searchHistory*(m: Memory; query: string): seq[SearchResult] =
     JOIN messages m ON m.id = messages_fts.rowid
     WHERE messages_fts MATCH ?
     ORDER BY rank
-  """, query):
-    let sr = SearchResult(
+  """, matchExpr):
+    result.add(SearchResult(
       sessionId: row[0],
       messageId: parseBiggestInt(row[1]),
       role:      strToRole(row[2]),
       content:   row[3],
       snippet:   row[4],
       createdAt: row[5],
-    )
-    result.add(sr)
+    ))
+
+proc searchHistory*(m: Memory; query: string): seq[SearchResult] =
+  ## Full-text searches all message content using FTS5.
+  ## Returns matching rows ordered by relevance (FTS5 rank).
+  ##
+  ## The raw query is tried first so intentional FTS5 syntax (phrase quotes,
+  ## boolean operators) keeps working. If that raises a syntax error — which
+  ## ordinary text such as "rm -rf" or "foo:bar" does — it is retried as a
+  ## sanitized literal query. A still-invalid query yields no results rather
+  ## than propagating a DbError to the caller.
+  if query.len == 0:
+    return @[]
+  try:
+    return runFtsSearch(m, query)
+  except DbError:
+    let sanitized = sanitizeFtsQuery(query)
+    if sanitized.len == 0:
+      return @[]
+    try:
+      return runFtsSearch(m, sanitized)
+    except DbError:
+      return @[]
 
 proc getTokenUsage*(m: Memory; sessionId: string): TokenUsage =
   ## Returns aggregated token counts for all messages in `sessionId`.
