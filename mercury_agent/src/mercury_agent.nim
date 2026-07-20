@@ -39,6 +39,7 @@ import dimscord
 import mercury_core/agent_loop
 import tools/shell
 import mercury_agent/web_server
+import mercury_agent/tui/chat_tui
 
 # ---------------------------------------------------------------------------
 # Globals for graceful Ctrl+C handling
@@ -1155,6 +1156,46 @@ proc cmdDaemon*(
       threadDb.close()
       mem.close()
   return 0
+proc cmdTui*(
+    model = "";
+    provider = "";
+    temperature = -1.0;
+    config = "";
+    envFile = ".env";
+    noStream = false;
+): int =
+  ## Fullscreen terminal UI. Returns a process exit code.
+  setControlCHook(onCtrlC)
+  var ov = emptyOverrides()
+  ov.model = model
+  ov.provider = provider
+  if temperature >= 0.0:
+    ov.temperature = temperature
+    ov.hasTemperature = true
+  ov.configPath = config
+  ov.envPath = envFile
+  var cfg: MercuryConfig
+  try:
+    cfg = loadConfigWithOverrides(ov)
+  except ConfigError as e:
+    printError(e.msg); return 2
+  let llm = buildLLMClient(cfg)
+
+  # Set agent globals so delegate tool can work from this flow.
+  setGlobalLLMClient(llm)
+  setMercuryConfig(cfg)
+  let personasPath = defaultPersonasPath()
+  let pReg =
+    if fileExists(personasPath): loadPersonasFile(personasPath)
+    else: newPersonaRegistry()
+  setPersonaRegistry(pReg)
+  setDelegationConfig(defaultDelegationConfig())
+
+  let reg = buildRegistry(cfg)
+  var mem = openMemory(cfg)
+  defer: mem.close()
+  return runTui(cfg, llm, reg, mem, noStream)
+
 
 when isMainModule:
   import cligen
@@ -1167,6 +1208,15 @@ when isMainModule:
   ##   mercury_agent search "needle"
   ##   mercury_agent run code_reviewer "review the auth module"
   dispatchMulti(
+    [cmdTui,     cmdName = "tui",     help = {
+      "model":       "override model name",
+      "provider":    "override provider (openrouter|vllm)",
+      "temperature": "override sampling temperature (0..2). " &
+                     "Negative means leave at config default.",
+      "config":      "path to TOML config (overrides default)",
+      "envFile":     "path to .env file (default: .env)",
+      "noStream":    "disable token-by-token streaming output",
+    }],
     [cmdChat,    cmdName = "chat",    help = {
       "model":       "override model name",
       "provider":    "override provider (openrouter|vllm)",
