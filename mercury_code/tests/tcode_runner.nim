@@ -1,9 +1,11 @@
 ## Tests for the code runner module.
 ## Covers CompileResult formatting, error parsing, and CodingHarnessConfig defaults.
 
-import std/[unittest, strutils]
+import std/[unittest, strutils, json, os]
 
 import mercury_code/code_runner
+import mercury_code/code_tool
+import mercury_core/tool_registry
 
 # ---------------------------------------------------------------------------
 # CompileResult formatting
@@ -137,3 +139,63 @@ suite "defaultCodingHarnessConfig":
     check: cfg.buildTimeoutMs == 120_000
     check: cfg.testTimeoutMs == 300_000
     check: cfg.maxOutputBytes == 512 * 1024
+
+# ---------------------------------------------------------------------------
+# File tool sandbox enforcement
+# ---------------------------------------------------------------------------
+
+suite "code_tool sandbox enforcement":
+
+  setup:
+    let sandbox = getTempDir() / "mercury_code_sandbox_test"
+    createDir(sandbox)
+    var cfg = defaultCodingHarnessConfig()
+    cfg.sandboxRoot = sandbox
+
+  teardown:
+    removeDir(sandbox)
+
+  test "read within sandbox succeeds":
+    let p = sandbox / "hello.nim"
+    writeFile(p, "echo 1")
+    let t = readFileTool(cfg)
+    let res = t.execute(%*{"path": p})
+    check: not res.isError
+    check: res.output == "echo 1"
+
+  test "read of absolute path outside sandbox is denied":
+    let t = readFileTool(cfg)
+    let res = t.execute(%*{"path": "/etc/passwd"})
+    check: res.isError
+    check: "outside the sandbox" in res.output
+
+  test "read escaping via .. is denied":
+    let t = readFileTool(cfg)
+    let res = t.execute(%*{"path": sandbox / ".." / "escape.nim"})
+    check: res.isError
+    check: "outside the sandbox" in res.output
+
+  test "write outside sandbox is denied and creates nothing":
+    let target = getTempDir() / "mercury_code_outside_target.nim"
+    removeFile(target)
+    let t = writeFileTool(cfg)
+    let res = t.execute(%*{"path": target, "content": "malicious"})
+    check: res.isError
+    check: "outside the sandbox" in res.output
+    check: not fileExists(target)
+
+  test "write within sandbox succeeds":
+    let p = sandbox / "out.nim"
+    let t = writeFileTool(cfg)
+    let res = t.execute(%*{"path": p, "content": "written"})
+    check: not res.isError
+    check: readFile(p) == "written"
+
+  test "sibling directory sharing the sandbox prefix cannot escape":
+    let sibling = sandbox & "-evil"
+    createDir(sibling)
+    defer: removeDir(sibling)
+    let t = readFileTool(cfg)
+    let res = t.execute(%*{"path": sibling / "secret.nim"})
+    check: res.isError
+    check: "outside the sandbox" in res.output

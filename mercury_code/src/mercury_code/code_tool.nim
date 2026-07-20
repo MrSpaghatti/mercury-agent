@@ -16,6 +16,7 @@
 import std/[json, strutils, os]
 
 import mercury_core/tool_registry
+import mercury_core/file_path_validator
 import code_runner
 import compile
 
@@ -36,6 +37,21 @@ proc sandboxPath*(path: string; root: string): string =
   if absRoot.len > 0 and absPath.startsWith(absRoot):
     return path
   return root
+
+proc withinSandbox*(path, root: string): bool =
+  ## True if `path` resolves to `root` itself or a location beneath it.
+  ## Resolution follows symlinks and collapses `..`/`.` via resolvePathSafe,
+  ## and the boundary requires a full "/" separator so a sibling directory
+  ## sharing the prefix cannot escape. An empty `root` means no sandbox is
+  ## configured, so the check is skipped (unrestricted).
+  if root.len == 0:
+    return true
+  try:
+    let absRoot = resolvePathSafe(root)
+    let absPath = resolvePathSafe(path)
+    result = absPath == absRoot or absPath.startsWith(absRoot & "/")
+  except CatchableError:
+    result = false  # fail closed if the path cannot be resolved
 
 proc formatCompileResult(res: CompileResult): string =
   if res.success:
@@ -117,10 +133,17 @@ proc testTool*(cfg: CodingHarnessConfig): Tool =
 
 proc readFileTool*(cfg: CodingHarnessConfig): Tool =
   let allowed = cfg.allowedExtensions
+  let sandboxRoot = cfg.sandboxRoot
   let execute: ToolExecuteProc = proc (args: JsonNode): ToolResult {.gcsafe, raises: [].} =
     let path = args{"path"}.getStr("")
     if path.len == 0:
       return ToolResult(output: "path is required", isError: true)
+    if not withinSandbox(path, sandboxRoot):
+      return ToolResult(
+        output: "access denied: path is outside the sandbox root '" &
+                sandboxRoot & "'",
+        isError: true, exitCode: 1,
+      )
     let (_, _, ext) = path.splitFile()
     if ext.len > 0 and ext notin allowed:
       return ToolResult(
@@ -160,11 +183,18 @@ proc readFileTool*(cfg: CodingHarnessConfig): Tool =
 
 proc writeFileTool*(cfg: CodingHarnessConfig): Tool =
   let allowed = cfg.allowedExtensions
+  let sandboxRoot = cfg.sandboxRoot
   let execute: ToolExecuteProc = proc (args: JsonNode): ToolResult {.gcsafe, raises: [].} =
     let path = args{"path"}.getStr("")
     let content = args{"content"}.getStr("")
     if path.len == 0:
       return ToolResult(output: "path is required", isError: true)
+    if not withinSandbox(path, sandboxRoot):
+      return ToolResult(
+        output: "access denied: path is outside the sandbox root '" &
+                sandboxRoot & "'",
+        isError: true, exitCode: 1,
+      )
     let (_, _, ext) = path.splitFile()
     if ext.len > 0 and ext notin allowed:
       return ToolResult(
