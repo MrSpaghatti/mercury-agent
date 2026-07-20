@@ -93,6 +93,34 @@ suite "parseNimErrors":
     check: errors.len == 1
     check: errors[0].line == 5
 
+suite "parseNimCompilerOutput":
+
+  test "parses a real diagnostic line":
+    let raw = "/path/file.nim(10, 5) Error: undeclared identifier: bar"
+    let errors = parseNimCompilerOutput(raw)
+    check: errors.len == 1
+    check: errors[0].file == "/path/file.nim"
+    check: errors[0].line == 10
+    check: errors[0].column == 5
+
+  test "non-numeric parenthesis lines do not raise and are skipped":
+    # "assert(x == y)" / "func(argname)" match the file(...) shape but are not
+    # diagnostics. Previously the unguarded parseInt raised a ValueError.
+    let raw = "myfunc(argname) returned 3\n" &
+              "assert(x == y)\n" &
+              "/path/real.nim(7, 2) Error: boom"
+    var errors: seq[CompileError]
+    # Must not raise.
+    errors = parseNimCompilerOutput(raw)
+    check: errors.len == 1
+    check: errors[0].file == "/path/real.nim"
+    check: errors[0].line == 7
+    check: errors[0].column == 2
+
+  test "diagnostic with non-numeric column is skipped, not fatal":
+    let raw = "/path/file.nim(10, oops) Error: weird"
+    check: parseNimCompilerOutput(raw).len == 0
+
 # ---------------------------------------------------------------------------
 # CodingHarnessConfig defaults
 # ---------------------------------------------------------------------------

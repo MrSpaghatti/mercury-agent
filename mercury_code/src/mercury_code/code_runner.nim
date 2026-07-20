@@ -122,8 +122,16 @@ proc parseNimCompilerOutput*(raw: string): seq[CompileError] =
     if parts.len < 1:
       continue
 
-    let lineNum = parseInt(parts[0].strip())
-    let colNum = if parts.len > 1: parseInt(parts[1].strip()) else: 0
+    # The "(...)" is only a real diagnostic location if it parses as numbers.
+    # Ordinary text such as "assert(x == y)" or "func(argname)" also matches
+    # the file(...) shape, so guard the conversion and skip non-diagnostics
+    # instead of raising a ValueError.
+    var lineNum, colNum: int
+    try:
+      lineNum = parseInt(parts[0].strip())
+      colNum = if parts.len > 1: parseInt(parts[1].strip()) else: 0
+    except ValueError:
+      continue
 
     # Extract severity and message: either "[severity]" or "severity:" prefix.
     let after = stripped[parenEnd + 1 ..< stripped.len].strip()
