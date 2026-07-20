@@ -31,6 +31,17 @@ suite "File Path Validator":
     check res.decision == pathDeny
     check res.reason.contains("sandbox")
 
+  test "Sibling directory sharing sandbox prefix cannot escape":
+    # /…/test_sandbox-evil/file.txt shares the "test_sandbox" prefix but is
+    # NOT inside the sandbox. A naive startsWith check would let it through.
+    let evilDir = getCurrentDir() / "test_sandbox-evil"
+    createDir(evilDir)
+    let path = evilDir / "file.txt"
+    let res = validatePath(path, rules)
+    check res.decision == pathDeny
+    check res.reason.contains("sandbox")
+    removeDir(evilDir)
+
   test "Mandatory deny list takes precedence":
     let path = sandboxDir / ".env"
     let res = validatePath(path, rules)

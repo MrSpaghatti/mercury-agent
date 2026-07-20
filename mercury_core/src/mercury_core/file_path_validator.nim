@@ -93,9 +93,13 @@ proc validatePath*(path: string, rules: FileRules): ValidationResult =
   p = resolvePathSafe(p)
   
   # 4. Sandbox check
+  #    Require an exact match or a real directory boundary ("/") after the
+  #    sandbox prefix. A bare startsWith would let a sibling directory that
+  #    merely shares the prefix (e.g. /home/u/sandbox-evil for a
+  #    /home/u/sandbox sandbox) escape the sandbox.
   if rules.sandboxDir != "":
     let sandbox = resolvePathSafe(rules.sandboxDir)
-    if not p.startsWith(sandbox):
+    if p != sandbox and not p.startsWith(sandbox & "/"):
       return ValidationResult(decision: pathDeny, resolvedPath: p, reason: "Path escapes sandbox")
       
   # 5. Mandatory deny list
