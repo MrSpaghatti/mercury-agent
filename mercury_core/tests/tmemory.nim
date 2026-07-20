@@ -3,7 +3,7 @@
 ## All tests use an in-memory SQLite database (:memory:) so no files are
 ## created on disk and tests are fully isolated.
 
-import std/[unittest, strutils]
+import std/[unittest, strutils, os, times]
 import mercury_core/llm_client
 import mercury_core/memory
 
@@ -343,3 +343,87 @@ suite "Memory isolation":
     let h1 = m1.getHistory(s1)
     check h1.len == 1
     check h1[0].content == "only in m1"
+
+# ---------------------------------------------------------------------------
+# Suite: WAL mode concurrency
+#
+# Task 1 Phase 1b: newMemory() enables PRAGMA journal_mode=WAL and
+# busy_timeout=5000 so a writer and a reader can hit the same file-backed
+# database from separate threads/connections without SQLITE_BUSY. This
+# only exercises anything real against a file on disk — :memory: databases
+# are private per-connection, so the earlier suites can't cover this.
+# ---------------------------------------------------------------------------
+
+type
+  ThreadOutcome = object
+    ok: bool
+    error: string
+
+var writerChan: Channel[ThreadOutcome]
+var readerChan: Channel[ThreadOutcome]
+
+proc walWriterThread(dbPath: string) {.thread.} =
+  var outcome = ThreadOutcome(ok: true)
+  try:
+    var m = newMemory(dbPath)
+    defer: m.close()
+    for i in 1 .. 50:
+      let sid = m.newSession()
+      m.appendMessage(sid, userMsg("writer message " & $i))
+  except CatchableError as e:
+    outcome.ok = false
+    outcome.error = e.msg
+  writerChan.send(outcome)
+
+proc walReaderThread(dbPath: string) {.thread.} =
+  var outcome = ThreadOutcome(ok: true)
+  try:
+    var m = newMemory(dbPath)
+    defer: m.close()
+    for i in 1 .. 50:
+      discard m.listSessions(limit = 10)
+      discard m.searchHistory("writer")
+  except CatchableError as e:
+    outcome.ok = false
+    outcome.error = e.msg
+  readerChan.send(outcome)
+
+suite "WAL mode concurrency":
+  test "concurrent writer and reader threads do not hit SQLITE_BUSY":
+    let dbPath = getTempDir() / ("mercury_wal_test_" & $getTime().toUnix() &
+                                  "_" & $getCurrentProcessId() & ".db")
+    for suffix in ["", "-wal", "-shm"]:
+      try: removeFile(dbPath & suffix)
+      except OSError: discard
+    defer:
+      for suffix in ["", "-wal", "-shm"]:
+        try: removeFile(dbPath & suffix)
+        except OSError: discard
+
+    # Create the file (and schema) up front so both threads open the same
+    # already-initialized database rather than racing on initSchema().
+    block:
+      var seed = newMemory(dbPath)
+      seed.close()
+
+    writerChan.open()
+    readerChan.open()
+
+    var writerThread: Thread[string]
+    var readerThread: Thread[string]
+    createThread(writerThread, walWriterThread, dbPath)
+    createThread(readerThread, walReaderThread, dbPath)
+
+    let wr = writerChan.recv()
+    let rr = readerChan.recv()
+    joinThread(writerThread)
+    joinThread(readerThread)
+    writerChan.close()
+    readerChan.close()
+
+    check wr.ok
+    check rr.ok
+    if not wr.ok:
+      echo "writer thread error: " & wr.error
+    if not rr.ok:
+      echo "reader thread error: " & rr.error

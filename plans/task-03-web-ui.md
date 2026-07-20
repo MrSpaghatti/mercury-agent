@@ -1,8 +1,20 @@
 # Task 3: Web UI
 
-**Status**: 🔴 Not Started
+**Status**: 🟢 Done — with scope changes from the original plan (see below)
 **Dependencies**: Task 1 (Agent Loop relocation). Task 2 (Streaming) is nice-to-have.
 **Complexity**: Medium-Large
+
+**Scope change (2026-07-20 audit)**: Phases 3a–3c implemented as specified,
+except SSE streaming on `/api/chat` (deferred — `asynchttpserver` doesn't
+support long-lived chunked responses after the initial `respond()` call;
+the endpoint returns the full result as JSON instead). Phase 3d (security
+hardening): input validation (>10KB rejection) implemented as specified.
+CSRF protection is implemented as an `Origin` header check rather than a
+token, since the server is same-origin-only. Rate limiting is a
+per-client fixed-window limiter in `web_server.nim` itself, not a reuse
+of `rate_limit.nim` — that module implements outbound retry-with-backoff
+for calling other APIs (e.g. Discord), which doesn't fit inbound request
+throttling; reusing it as specified wasn't actually possible.
 
 ---
 

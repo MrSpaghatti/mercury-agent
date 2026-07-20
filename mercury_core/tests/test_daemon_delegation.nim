@@ -1,10 +1,9 @@
-import unittest, asyncdispatch, options
+import unittest, asyncdispatch, options, strutils
 import mercury_core/agent_dispatcher
-import mercury_core/agent_loop
 import mercury_core/discord_types
 import mercury_core/config
-import mercury_core/llm_client
 import mercury_core/tool_registry
+import mock_llm_server
 
 suite "daemon delegation config":
   test "daemonDelegation defaults to false":
@@ -16,20 +15,36 @@ suite "daemon delegation config":
     cfg.daemonDelegation = true
     check cfg.daemonDelegation == true
 
-suite "agent dispatcher with runFn":
-  test "dispatcher with runFn produces result via callback":
+const SuccessBody = """
+{
+  "id": "chatcmpl-1",
+  "object": "chat.completion",
+  "model": "test-model",
+  "choices": [{
+    "index": 0,
+    "message": {"role": "assistant", "content": "hello from agent"},
+    "finish_reason": "stop"
+  }],
+  "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}
+}
+"""
+
+suite "agent dispatcher — production path (real runAgentLoop)":
+  setup:
+    var server {.inject.} = startMockServer()
+
+  teardown:
+    stopMockServer(server)
+
+  test "dispatcher runs a real agent loop and produces a result via callback":
+    server.enqueue("200 OK", SuccessBody)
     var received: agent_dispatcher.AgentResult
     let cb = proc(r: agent_dispatcher.AgentResult) {.gcsafe, closure, raises: [].} =
-      received = r
+      {.cast(gcsafe), cast(raises: []).}:
+        received = r
 
-    let runFn = proc(cfg: MercuryConfig; llm: LLMClient; reg: ToolRegistry;
-                      dbPath, userInput: string): agent_loop.AgentResult {.gcsafe, raises: [].} =
-      agent_loop.AgentResult(
-        text: "hello from agent",
-        sessionId: "sess_daemon"
-      )
-
-    let dispatcher = newAgentDispatcher(cb, runFn, defaultConfig(), LLMClient(), newToolRegistry(), ":memory:")
+    let dispatcher = newAgentDispatcher(
+      cb, defaultConfig(), makeClient(server), newToolRegistry(), ":memory:")
     let request = AgentRequest(
       userInput: "hello",
       sessionId: "sess_1",
@@ -41,19 +56,17 @@ suite "agent dispatcher with runFn":
     check received.error.isNone
     check received.channelId == "chan_1"
 
-  test "dispatcher with runFn propagates error via stopReason":
+  test "dispatcher propagates LLM errors as AgentResult.error":
+    server.enqueue("500 Internal Server Error",
+      """{"error": {"message": "upstream exploded"}}""")
     var received: agent_dispatcher.AgentResult
     let cb = proc(r: agent_dispatcher.AgentResult) {.gcsafe, closure, raises: [].} =
-      received = r
+      {.cast(gcsafe), cast(raises: []).}:
+        received = r
 
-    let runFn = proc(cfg: MercuryConfig; llm: LLMClient; reg: ToolRegistry;
-                      dbPath, userInput: string): agent_loop.AgentResult {.gcsafe, raises: [].} =
-      agent_loop.AgentResult(
-        text: "",
-        stopReason: asrError
-      )
-
-    let dispatcher = newAgentDispatcher(cb, runFn, defaultConfig(), LLMClient(), newToolRegistry(), ":memory:")
+    let dispatcher = newAgentDispatcher(
+      cb, defaultConfig(), makeClient(server, maxRetries = 1),
+      newToolRegistry(), ":memory:")
     let request = AgentRequest(
       userInput: "test",
       sessionId: "sess_2",
@@ -61,26 +74,15 @@ suite "agent dispatcher with runFn":
       threadId: "thread_2"
     )
     waitFor dispatchAgent(dispatcher, request)
-    check received.responseText == ""
     check received.error.isSome
     check received.channelId == "chan_2"
 
-  test "dispatcher with runFn passes config and userInput":
-    var capturedCfg: MercuryConfig
-    var capturedInput: string
-
+  test "dispatcher sends the real user input to the LLM":
+    server.enqueue("200 OK", SuccessBody)
     let cb = proc(r: agent_dispatcher.AgentResult) {.gcsafe, closure, raises: [].} = discard
 
-    let runFn = proc(cfg: MercuryConfig; llm: LLMClient; reg: ToolRegistry;
-                      dbPath, userInput: string): agent_loop.AgentResult {.gcsafe, raises: [].} =
-      capturedCfg = cfg
-      capturedInput = userInput
-      agent_loop.AgentResult(
-        text: "ok",
-        sessionId: "sess_3"
-      )
-
-    let dispatcher = newAgentDispatcher(cb, runFn, defaultConfig(), LLMClient(), newToolRegistry(), ":memory:")
+    let dispatcher = newAgentDispatcher(
+      cb, defaultConfig(), makeClient(server), newToolRegistry(), ":memory:")
     let request = AgentRequest(
       userInput: "custom input",
       sessionId: "sess_3",
@@ -88,22 +90,18 @@ suite "agent dispatcher with runFn":
       threadId: "thread_3"
     )
     waitFor dispatchAgent(dispatcher, request)
-    check capturedInput == "custom input"
+    check server.requestCount == 1
+    check "custom input" in server.requestBodies[0]
 
   test "callback receives result synchronously":
+    server.enqueue("200 OK", SuccessBody)
     var resultReceived = false
-
     let cb = proc(r: agent_dispatcher.AgentResult) {.gcsafe, closure, raises: [].} =
-      resultReceived = true
+      {.cast(gcsafe), cast(raises: []).}:
+        resultReceived = true
 
-    let runFn = proc(cfg: MercuryConfig; llm: LLMClient; reg: ToolRegistry;
-                      dbPath, userInput: string): agent_loop.AgentResult {.gcsafe, raises: [].} =
-      agent_loop.AgentResult(
-        text: "sync",
-        sessionId: "sess_4"
-      )
-
-    let dispatcher = newAgentDispatcher(cb, runFn, defaultConfig(), LLMClient(), newToolRegistry(), ":memory:")
+    let dispatcher = newAgentDispatcher(
+      cb, defaultConfig(), makeClient(server), newToolRegistry(), ":memory:")
     let request = AgentRequest(
       userInput: "sync test",
       sessionId: "sess_4",
@@ -112,3 +110,35 @@ suite "agent dispatcher with runFn":
     )
     waitFor dispatchAgent(dispatcher, request)
     check resultReceived == true
+
+  test "turnCallback fires once per ReAct turn with the request's channelId":
+    server.enqueue("200 OK", SuccessBody)
+    var turnCalls: seq[string] = @[]
+    let cb = proc(r: agent_dispatcher.AgentResult) {.gcsafe, closure, raises: [].} = discard
+    let turnCb = proc(channelId: string) {.gcsafe, closure, raises: [].} =
+      {.cast(gcsafe), cast(raises: []).}:
+        turnCalls.add(channelId)
+
+    let dispatcher = newAgentDispatcher(
+      cb, defaultConfig(), makeClient(server), newToolRegistry(), ":memory:",
+      turnCallback = turnCb)
+    let request = AgentRequest(
+      userInput: "hello",
+      sessionId: "sess_5",
+      channelId: "chan_typing",
+      threadId: "thread_5"
+    )
+    waitFor dispatchAgent(dispatcher, request)
+    check turnCalls == @["chan_typing"]
+
+suite "agent dispatcher — placeholder path (no cfg/llm)":
+  test "echoes input back when constructed without production args":
+    var received: agent_dispatcher.AgentResult
+    let cb = proc(r: agent_dispatcher.AgentResult) {.gcsafe, closure, raises: [].} =
+      {.cast(gcsafe), cast(raises: []).}:
+        received = r
+    let dispatcher = newAgentDispatcher(cb)
+    let request = AgentRequest(userInput: "echo me", channelId: "chan_5")
+    waitFor dispatchAgent(dispatcher, request)
+    check received.responseText == "Agent response for: echo me"
+    check received.error.isNone

@@ -1,8 +1,22 @@
 # Task 2: Streaming Responses (SSE)
 
-**Status**: 🔴 Not Started
+**Status**: 🟢 Done — with scope changes from the original plan (see below)
 **Dependencies**: Task 1 (Agent Loop relocation)
 **Complexity**: Large
+
+**Scope change (2026-07-20 audit)**: Phase 2a–2c (SSE parsing, agent_loop
+wiring, CLI token-by-token output + `--no-stream`) are implemented as
+specified. Phase 2d (Discord progressive message edits) was intentionally
+**not** implemented — replaced with a typing-indicator refresh instead.
+Discord's typing indicator expires after ~10s and `dispatchAgent` blocks
+synchronously per turn (see Task 1's threading deferral), so true
+token-by-token streamed edits aren't achievable without either an async
+LLM client or real dispatcher threading, both out of scope here. Instead,
+`agent_loop.AgentConfig.turnCallback` fires once per ReAct iteration and
+`agent_dispatcher.AgentDispatcher.turnCallback` wires it to
+`triggerTyping`, so the indicator stays lit across multi-turn runs instead
+of lapsing after the first ~10s. `DiscordConfig.streamDebounceMs` was not
+added since there's no debounced edit stream to configure.
 
 ---
 

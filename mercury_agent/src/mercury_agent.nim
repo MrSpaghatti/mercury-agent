@@ -31,7 +31,7 @@ import mercury_core/message_chunker
 import mercury_core/mcp_tool
 import mercury_core/persona
 import mercury_core/delegate
-from mercury_core/agent_dispatcher import AgentDispatcher, AgentRequest, AgentRunFn,
+from mercury_core/agent_dispatcher import AgentDispatcher, AgentRequest,
     newAgentDispatcher
 
 import dimscord
@@ -1092,24 +1092,11 @@ proc cmdDaemon*(
   # Create a MockShard with the bot's user ID (populated on ready)
   var shard = newMockShard("")
 
-  # Create the agent dispatcher — callback sends results to Discord
+  # Create the agent dispatcher — callback sends results to Discord.
+  # dispatchAgent calls runAgentLoop directly (see agent_dispatcher.nim);
+  # no injected run-function wrapper needed here.
   let sendFn = makeSendFn(api)
-  let runFn: AgentRunFn = proc(cfg: MercuryConfig; llm: LLMClient;
-                                 reg: ToolRegistry; dbPath, userInput: string):
-                                   agent_loop.AgentResult {.gcsafe, raises: [].} =
-    {.cast(raises: []).}:
-      try:
-        var mem = newMemory(dbPath)
-        defer: mem.close()
-        let agentResult = runAgentLoop(cfg, llm, reg, mem, userInput)
-        return agentResult
-      except CatchableError as e:
-        stderr.writeLine("mercury: agent run failed in daemon: " & e.msg)
-        var fallback: agent_loop.AgentResult
-        fallback.text = e.msg
-        fallback.stopReason = asrError
-        return fallback
-
+  let typingFn = makeTypingFn(api)
   let callbackProc = proc(r: agent_dispatcher.AgentResult) {.gcsafe, raises: [].} =
     {.cast(raises: []).}:
       let text = if r.error.isSome: "Error: " & r.error.get()
@@ -1117,8 +1104,17 @@ proc cmdDaemon*(
       let chunks = chunkMessage(text)
       for chunk in chunks:
         asyncCheck sendWithLogging(sendFn, r.channelId, chunk)
+  # Discord's typing indicator expires after ~10s; refresh it once per
+  # ReAct turn so it stays lit for the length of a multi-turn agent run
+  # instead of just the first ~10s. See agent_loop.AgentConfig.turnCallback.
+  let turnCallback = proc(channelId: string) {.gcsafe, raises: [].} =
+    {.cast(gcsafe), cast(raises: []).}:
+      try:
+        waitFor typingFn(channelId)
+      except CatchableError:
+        discard
   let dispatcher = newAgentDispatcher(
-    callbackProc, runFn, cfg, llm, reg, resolveDbPath(cfg)
+    callbackProc, cfg, llm, reg, resolveDbPath(cfg), turnCallback = turnCallback
   )
 
   # Create the DI-based DiscordBot with real API callbacks

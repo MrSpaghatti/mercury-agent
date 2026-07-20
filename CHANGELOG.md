@@ -84,6 +84,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `llm_client` and the daemon agent runner. `validate()` now warns when
   OpenRouter is selected but `OPENROUTER_API_KEY` is empty.
 
+### Fixed — 2026-07-20 follow-up audit (spec drift vs. Tasks 1–3)
+
+- **The cross-package injection hack was not actually eliminated.** The
+  "Changed" entry above (and `agent_dispatcher.nim`'s own header comment)
+  claimed relocating `agent_loop.nim` removed the injected `AgentRunFn`
+  wrapper — it didn't; `cmdDaemon` still built a `runFn` closure and passed
+  it to `newAgentDispatcher`. `dispatchAgent` now calls
+  `agent_loop.runAgentLoop` directly (opening/closing its own `Memory` per
+  dispatch); `AgentRunFn` removed from `agent_dispatcher.nim`.
+- **Web UI security hardening (Task 3 Phase 3d) was silently incomplete.**
+  Input size validation (>10KB) was implemented; CSRF protection and rate
+  limiting were not, and the gap wasn't documented anywhere. Added an
+  `Origin`-header CSRF check and a per-client fixed-window rate limiter to
+  `POST /api/chat` (`rate_limit.nim` turned out not to fit — it's an
+  outbound retry-with-backoff helper for calling other APIs, not an
+  inbound throttle; see `task-03-web-ui.md`).
+- **`web_server.nim` had no test coverage.** Added `tweb_server.nim`
+  covering routing, path-traversal rejection, the chat/sessions/search
+  endpoints, and the new CSRF/rate-limit behavior, using a threaded mock
+  LLM backend (the blocking `chatCompletion` client can't be exercised by
+  an async-only mock without deadlocking the test's own event loop).
+- **Task 1 Phase 1b's required WAL concurrency test was missing.** Added
+  a `tmemory.nim` test that runs a writer and a reader against the same
+  file-backed database from separate threads/connections and asserts
+  neither hits `SQLITE_BUSY`.
+- **Discord had no "still working" signal on long agent runs** (Task 2
+  Phase 2d was unimplemented, though honestly flagged as deferred).
+  Progressive message-edit streaming isn't achievable without an async
+  LLM client or real dispatcher threading (both out of scope), so instead:
+  `AgentConfig.turnCallback` fires once per ReAct iteration, and
+  `AgentDispatcher.turnCallback` wires it to Discord's typing indicator,
+  refreshing it every turn instead of letting it lapse after ~10s on
+  multi-turn runs.
 
 - **Security — coding-harness file tools ignored the sandbox root.**
   `read_file` / `write_file` in `mercury_code/code_tool.nim` documented

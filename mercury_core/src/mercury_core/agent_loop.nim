@@ -71,6 +71,13 @@ type
     streamCallback*: OnStreamEvent
       ## If non-nil, the agent loop uses chatCompletionStream instead of
       ## chatCompletion, delivering token-by-token deltas to this callback.
+    turnCallback*: proc() {.gcsafe, raises: [].}
+      ## If non-nil, called once at the start of every ReAct iteration
+      ## (before the LLM call). Used by callers with a "the agent is
+      ## still working" indicator (e.g. Discord's typing status, which
+      ## expires after ~10s) to refresh it once per turn. Since each turn
+      ## blocks synchronously on the LLM call, this can't fire *during*
+      ## a single slow call — only between turns.
 
   AgentStats* = object
     ## Counters returned alongside the agent response, useful for tests
@@ -242,6 +249,8 @@ proc runAgentLoop*(
   let loopThreshold = max(1, agentCfg.loopDetectionThreshold)
 
   for iteration in 1 .. maxIter:
+    if agentCfg.turnCallback != nil:
+      agentCfg.turnCallback()
     inc result.stats.totalTurns
 
     var resp: ChatResponse

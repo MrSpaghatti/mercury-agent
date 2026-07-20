@@ -14,9 +14,13 @@
 ## SSE streaming is deferred — `asynchttpserver` does not support
 ## chunked/long-lived responses after the initial respond() call.
 ##
+## POST /api/chat is CSRF-checked (same-origin only) and rate-limited per
+## client, since it runs the agent (shell/file tools) with no
+## authentication of its own — see isAllowedOrigin / checkRateLimit.
+##
 ## Pattern: create → configure → waitFor start() → test → stop().
 
-import std/[asynchttpserver, asyncdispatch, json, strutils, os, uri]
+import std/[asynchttpserver, asyncdispatch, json, strutils, os, uri, times, tables]
 
 import mercury_core/config
 import mercury_core/llm_client
@@ -47,7 +51,15 @@ else:
 # Types
 # ---------------------------------------------------------------------------
 
+const
+  DefaultRateLimitWindowSeconds = 60
+  DefaultRateLimitMaxRequests = 30   ## max POST /api/chat requests per client per window
+
 type
+  RateLimitBucket = object
+    count: int
+    windowStart: Time
+
   WebServer* = ref object
     server*: AsyncHttpServer
     port*: int
@@ -55,6 +67,9 @@ type
     llm*: LLMClient
     registry*: ToolRegistry
     mem*: Memory
+    rateBuckets: Table[string, RateLimitBucket]
+    rateLimitMax*: int             ## overridable in tests; see newWebServer
+    rateLimitWindowSeconds*: int
 
   WebServerContext* = ref object
     ## Per-request context capturing the shared server state.
@@ -99,6 +114,31 @@ proc respondText(req: Request; code: HttpCode; body, contentType: string) {.asyn
 proc respondError(req: Request; code: HttpCode; msg: string) {.async.} =
   let body = %*{"error": msg}
   await respondJson(req, code, body)
+
+proc isAllowedOrigin(ws: WebServer; req: Request): bool =
+  ## CSRF guard for state-changing requests. A cross-origin browser request
+  ## (e.g. a malicious page open in another tab, relying on the browser to
+  ## deliver the request to our loopback server) always sends an Origin
+  ## header; a same-origin fetch from our own SPA may omit it entirely. So
+  ## only a *mismatched* Origin is rejected — a missing one is allowed.
+  if not req.headers.hasKey("Origin"):
+    return true
+  let origin = req.headers["Origin"]
+  origin == "http://127.0.0.1:" & $ws.port or
+    origin == "http://localhost:" & $ws.port
+
+proc checkRateLimit(ws: WebServer; clientId: string): bool =
+  ## Fixed-window rate limit per client (keyed by remote address). Returns
+  ## false once a client exceeds ws.rateLimitMax within the window.
+  let now = getTime()
+  if clientId notin ws.rateBuckets or
+      (now - ws.rateBuckets[clientId].windowStart).inSeconds >= ws.rateLimitWindowSeconds:
+    ws.rateBuckets[clientId] = RateLimitBucket(count: 1, windowStart: now)
+    return true
+  if ws.rateBuckets[clientId].count >= ws.rateLimitMax:
+    return false
+  ws.rateBuckets[clientId].count.inc
+  true
 
 # ---------------------------------------------------------------------------
 # Request routing
@@ -259,7 +299,12 @@ proc handleRequest*(ctx: WebServerContext; req: Request) {.async.} =
 
   elif httpMethod == HttpPost:
     if path == "api/chat":
-      await handleChat(ctx, req)
+      if not isAllowedOrigin(ctx.ws, req):
+        await respondError(req, Http403, "cross-origin request rejected")
+      elif not checkRateLimit(ctx.ws, req.hostname):
+        await respondError(req, Http429, "rate limit exceeded, try again later")
+      else:
+        await handleChat(ctx, req)
     else:
       await respondError(req, Http404, "not found")
 
@@ -283,17 +328,25 @@ proc newWebServer*(
   result.llm = llm
   result.registry = registry
   result.mem = mem
+  result.rateLimitMax = DefaultRateLimitMaxRequests
+  result.rateLimitWindowSeconds = DefaultRateLimitWindowSeconds
 
 proc start*(self: WebServer) {.async.} =
   ## Binds to loopback only: the agent has shell/file tools and the API
   ## carries no authentication, so this must not be reachable off-host.
+  ## Passing port 0 binds an OS-assigned port (used by tests); self.port
+  ## is updated to the actual bound port either way.
   let ctx = WebServerContext(ws: self)
-  let port = Port(self.port)
-  self.server.listen(port, address = "127.0.0.1")
+  self.server.listen(Port(self.port), address = "127.0.0.1")
+  self.port = self.server.getPort().int
   stderr.writeLine("[web] listening on http://localhost:" & $self.port)
   asyncCheck self.server.acceptRequest(
     proc (req: Request) {.async, gcsafe.} =
-      await handleRequest(ctx, req)
+      # tool_registry.execute() dispatches through a stored proc table, which
+      # the checker can't prove gcsafe by itself; this is a single-threaded
+      # dispatcher (no --threads:on in production), so it's safe in practice.
+      {.cast(gcsafe).}:
+        await handleRequest(ctx, req)
   )
 
 proc stop*(self: WebServer) =

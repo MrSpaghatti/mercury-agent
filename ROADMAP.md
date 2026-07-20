@@ -26,8 +26,8 @@ Detailed implementation specs in `plans/task-*.md`. Recommended execution order:
 
 1. ~~[Task 1 — Agent Loop + Dispatcher](plans/task-01-agent-loop.md)~~ ✅
 2. ~~[Task 4 — Code Quality](plans/task-04-code-quality.md)~~ ✅
-3. [Task 2 — Streaming](plans/task-02-streaming.md) ✅ (CLI only; Discord deferred)
-4. [Task 3 — Web UI](plans/task-03-web-ui.md) ✅ (non-streaming; SSE deferred)
+3. [Task 2 — Streaming](plans/task-02-streaming.md) ✅ (CLI streaming; Discord uses a refreshed typing indicator instead of progressive edits — see task file)
+4. [Task 3 — Web UI](plans/task-03-web-ui.md) ✅ (non-streaming; SSE deferred; CSRF + rate limiting implemented)
 5. [Task 6 — Plan-Execute](plans/task-06-plan-execute.md)
 6. [Task 7 — MCP Streaming](plans/task-07-mcp-streaming.md)
 7. [Task 5 — Vector Memory](plans/task-05-vector-memory.md)

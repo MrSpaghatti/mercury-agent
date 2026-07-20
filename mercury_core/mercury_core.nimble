@@ -11,7 +11,7 @@ switch("path", "src")
 task test, "Run all tests":
   exec "nim c -d:ssl -r tests/tconfig.nim"
   exec "nim c -d:ssl -r tests/ttoken_counter.nim"
-  exec "nim c -d:ssl -r tests/tmemory.nim"
+  exec "nim c -d:ssl --threads:on -r tests/tmemory.nim"
   exec "nim c -d:ssl --threads:on -r tests/tllm_client.nim"
   exec "nim c -d:ssl -r tests/ttool_registry.nim"
   exec "nim c -d:ssl -r tests/test_message_chunker.nim"
@@ -31,4 +31,4 @@ task test, "Run all tests":
   exec "nim c -d:ssl -r tests/test_mcp_client.nim"
   exec "nim c -d:ssl -r tests/test_mcp_tool.nim"
   exec "nim c -d:ssl -r tests/test_persona.nim"
-  exec "nim c -d:ssl -r tests/test_daemon_delegation.nim"
+  exec "nim c -d:ssl --threads:on -r tests/test_daemon_delegation.nim"
