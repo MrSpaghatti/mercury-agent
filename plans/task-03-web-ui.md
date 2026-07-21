@@ -1,3 +1,5 @@
+## NOTE: This project has been renamed from Mercury Agent to Talos Agent. All package names (mercury_core, mercury_agent, mercury_code) are now (talos_core, talos_agent, talos_code).
+
 # Task 3: Web UI
 
 **Status**: 🟢 Done — with scope changes from the original plan (see below)

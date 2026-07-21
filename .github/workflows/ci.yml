@@ -42,36 +42,35 @@ jobs:
             nimble-
 
       - name: Install nimble dependencies (core)
-        working-directory: mercury_core
+        working-directory: talos_core
         run: nimble install -y
 
-      # mercury_core is a library — nimble build does nothing, skip it.
+      # talos_core is a library — nimble build does nothing, skip it.
       - name: Install agent dependencies only
-        working-directory: mercury_agent
+        working-directory: talos_agent
         run: nimble install --depsOnly -y
 
       - name: Test core
-        working-directory: mercury_core
-        run: nimble test -y
+        working-directory: talos_core
         env:
           CI: "true"
 
       - name: Build agent
-        working-directory: mercury_agent
+        working-directory: talos_agent
         run: nimble build -y
 
       - name: Test agent
-        working-directory: mercury_agent
+        working-directory: talos_agent
         run: nimble test -y
         env:
           CI: "true"
 
       - name: Build code
-        working-directory: mercury_code
+        working-directory: talos_code
         run: nimble build -y
 
       - name: Test code
-        working-directory: mercury_code
+        working-directory: talos_code
         run: nimble test -y
         env:
           CI: "true"

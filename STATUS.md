@@ -1,14 +1,14 @@
-# Mercury Agent — Development Status
+# Talos Agent — Development Status
 
 **Last Updated**: July 20, 2026
-**Project Path**: `/home/spag/mercury-agent`
+**Project Path**: `/home/spag/talos-agent`
 **Phase**: Phase 1+2 complete. Tasks 1, 2, 3, & 4 (of 7) done.
 
 ---
 
 ## Summary
 
-All planned waves are implemented and verified. Mercury is a fully functional
+All planned waves are implemented and verified. Talos is a fully functional
 AI agent with:
 
 - **CLI agent** (`chat`, `ask`, `session`, `history`, `search`)
@@ -17,7 +17,7 @@ AI agent with:
 - **ReAct loop** with loop detection, error recovery, and configurable limits
 - **Streaming responses** (SSE) — token-by-token CLI output via `chatCompletionStream`;
   Discord progressive edits deferred (requires threading)
-- **Web UI** — single-page chat interface served via `mercury_agent web`,
+- **Web UI** — single-page chat interface served via `talos_agent web`,
   with session browsing, full-text search, and chat via REST API
 - **Tool system** with sandboxed shell, file read/write, permission checks,
   MCP client bridge, and persona-scoped agent delegation
@@ -43,8 +43,8 @@ AI agent with:
 ### Phase 1 Wave 3: CLI + Integration (100%)
 | Task | Module | Tests |
 |------|--------|-------|
-| 3.1 CLI interface (cligen) | `mercury_agent.nim` | 19/19 pass |
-| 3.2 Integration wiring | `mercury_agent.nim` | 17/17 pass (integration tests) |
+| 3.1 CLI interface (cligen) | `talos_agent.nim` | 19/19 pass |
+| 3.2 Integration wiring | `talos_agent.nim` | 17/17 pass (integration tests) |
 | 3.3 End-to-end tests + docs | `tagent_loop`, `tcli`, `tintegration` | All pass |
 | Agent shell tool | `test_shell_tool.nim` | 18/18 pass |
 
@@ -98,20 +98,20 @@ shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                    mercury_agent (CLI)                    │
+│                    talos_agent (CLI)                    │
 │  ┌──────────┐  ┌──────────────┐  ┌──────────────────┐   │
-│  │ cligen   │  │ mercury_core │  │ tools/shell.nim  │   │
+│  │ cligen   │  │ talos_core │  │ tools/shell.nim  │   │
 │  │ dispatch │──▶│ agent_loop   │──▶ (sandboxed shell)│   │
 │  └──────────┘  │ (ReAct loop) │  └──────────────────┘   │
 │                └──────┬───────┘                           │
 │                       │                                   │
 │  ┌─────────────────────┐   ┌─────────────────────────┐   │
-│  │ mercury_core/       │   │ mercury_core/           │   │
+│  │ talos_core/       │   │ talos_core/           │   │
 │  │ llm_client.nim      │   │ memory.nim (SQLite+FTS5)│   │
 │  │ config.nim          │   │ tool_registry.nim       │   │
 │  └─────────────────────┘   └─────────────────────────┘   │
 ├──────────────────────────────────────────────────────────┤
-│                 mercury_agent (Daemon)                    │
+│                 talos_agent (Daemon)                    │
 │  ┌──────────────────────────────────────────────────┐   │
 │  │ dimscord ─▶ discord_bridge ─▶ discord.nim         │   │
 │  │                                        │          │   │
@@ -120,7 +120,7 @@ shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
 │  │              discord_commands.nim                    │   │
 │  │                    │                                 │   │
 │  │                    ▼                                 │   │
-│  │  agent_dispatcher.nim ─▶ mercury_core/agent_loop    │   │
+│  │  agent_dispatcher.nim ─▶ talos_core/agent_loop    │   │
 │  └──────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -129,7 +129,7 @@ shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
 
 ## Files by Layer
 
-### mercury_core (19 modules)
+### talos_core (19 modules)
 | File | Role |
 |------|------|
 | `config.nim` | Layered config (TOML + .env + env vars) |
@@ -138,7 +138,7 @@ shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
 | `memory.nim` | SQLite + FTS5 persistence |
 | `tool_registry.nim` | Named tool registration + JSON schema export |
 | `agent_loop.nim` | ReAct loop: LLM → tool → loop |
-| `build_llm_client.nim` | MercuryConfig → LLMClient builder |
+| `build_llm_client.nim` | TalosConfig → LLMClient builder |
 | `discord.nim` | DI-based Discord bot |
 | `discord_bridge.nim` | Real Discord API adapter (Dimscord) |
 | `discord_commands.nim` | Bot command handlers |
@@ -152,17 +152,17 @@ shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
 | `rate_limit.nim` | Per-user token bucket rate limiter |
 | `thread_mapping.nim` | Discord→agent thread persistence |
 
-### mercury_agent (3 modules)
+### talos_agent (3 modules)
 | File | Role |
 |------|------|
-| `mercury_agent.nim` | CLI entry point + subcommand dispatch |
+| `talos_agent.nim` | CLI entry point + subcommand dispatch |
 | `tools/shell.nim` | Sandboxed shell tool with deny-list, timeout |
 | `tools/` | Tool implementations directory |
 
-### mercury_code (5 modules)
+### talos_code (5 modules)
 | File | Role |
 |------|------|
-| `mercury_code.nim` | CLI binary entry point |
+| `talos_code.nim` | CLI binary entry point |
 | `code_runner.nim` | CompileResult, parseNimErrors, CodingHarnessConfig |
 | `code_tool.nim` | compile/test/read_file/write_file tools |
 | `compile.nim` | Subprocess compile execution with timeout |
@@ -174,13 +174,13 @@ shutdown. Run individual tests with `nim c -r` to avoid the batch issue.
 
 | Package | Test files | Tests | Status |
 |---------|-----------|-------|--------|
-| mercury_core (Wave 1) | tconfig, tllm_client, ttoken_counter, tmemory | 126 | ✅ All pass |
-| mercury_core (Wave 2) | ttool_registry, test_mock_server | 22 | ✅ All pass |
-| mercury_core (Discord) | test_permission, test_file_*, test_rate_limit, test_thread_*, test_daemon_delegation, test_message_chunker, test_discord_*, test_e2e_discord | 149 | ✅ All pass |
-| mercury_core (MCP) | test_mcp_client, test_mcp_tool | 36 | ✅ All pass |
-| mercury_core (Persona) | test_persona | 19 | ✅ All pass |
-| mercury_agent | tcli, tagent_loop, tintegration, tdelegate_tool, tweb_server, test_shell_tool, tbench | 98 | ✅ All pass |
-| mercury_code | tcode_runner | 29 | ✅ All pass |
+| talos_core (Wave 1) | tconfig, tllm_client, ttoken_counter, tmemory | 126 | ✅ All pass |
+| talos_core (Wave 2) | ttool_registry, test_mock_server | 22 | ✅ All pass |
+| talos_core (Discord) | test_permission, test_file_*, test_rate_limit, test_thread_*, test_daemon_delegation, test_message_chunker, test_discord_*, test_e2e_discord | 149 | ✅ All pass |
+| talos_core (MCP) | test_mcp_client, test_mcp_tool | 36 | ✅ All pass |
+| talos_core (Persona) | test_persona | 19 | ✅ All pass |
+| talos_agent | tcli, tagent_loop, tintegration, tdelegate_tool, tweb_server, test_shell_tool, tbench | 98 | ✅ All pass |
+| talos_code | tcode_runner | 29 | ✅ All pass |
 | **Total** | **29 test files** | **479** | **✅ 0 FAILED** |
 
 ---
@@ -192,14 +192,14 @@ See [ROADMAP.md](ROADMAP.md) for the tracking table and execution order.
 
 ### ✅ Done
 
-1. **Task 1 — Agent Loop + Dispatcher** — `agent_loop.nim` moved to `mercury_core`,
+1. **Task 1 — Agent Loop + Dispatcher** — `agent_loop.nim` moved to `talos_core`,
    SQLite WAL + busy_timeout in `memory.nim`, dispatcher wired to real `AgentResult`.
 2. **Task 4 — Code Quality** — silent CatchableError discards logged, dead code removed,
    OpenRouter API key warning, TODO comments updated.
 3. **Task 2 — Streaming** — SSE streaming via `chatCompletionStream` in `llm_client.nim`,
    `streamCallback` in `AgentConfig`, token-by-token CLI output, `--no-stream` flag.
    Discord progressive edits deferred (blocked on dimscord `--threads:on`).
-4. **Task 3 — Web UI** — `mercury_agent web` subcommand, `web_server.nim` with
+4. **Task 3 — Web UI** — `talos_agent web` subcommand, `web_server.nim` with
    asynchttpserver, SPA with session search/listing, chat via `/api/chat`.
    SSE streaming deferred (asynchttpserver limitation).
 

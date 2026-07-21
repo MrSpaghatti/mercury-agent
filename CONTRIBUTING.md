@@ -1,4 +1,4 @@
-# Contributing to Mercury Agent
+# Contributing to Talos Agent
 
 ## Development Setup
 
@@ -15,15 +15,15 @@
 
 ```bash
 git clone <repo-url>
-cd mercury-agent
+cd talos-agent
 
 # Create an .env for your API key (tests don't need this)
 cp .env.example .env
 # Edit .env and set OPENROUTER_API_KEY=sk-or-...
 
 # Install nimble dependencies
-cd mercury_core && nimble install -y
-cd ../mercury_agent && nimble install -y
+cd talos_core && nimble install -y
+cd ../talos_agent && nimble install -y
 cd ..
 ```
 
@@ -34,7 +34,7 @@ cd ..
 ### Core library only (always works)
 
 ```bash
-cd mercury_core && nimble build
+cd talos_core && nimble build
 ```
 
 ### Full build (CLI + Discord daemon)
@@ -60,26 +60,26 @@ make test
 ### Run core tests only
 
 ```bash
-cd mercury_core && nimble test
+cd talos_core && nimble test
 ```
 
 ### Run agent tests only
 
 ```bash
-cd mercury_agent && nimble test
+cd talos_agent && nimble test
 ```
 
 ### Run a single test file
 
 ```bash
-cd mercury_core && nim c --path:src -r tests/tconfig.nim
-cd mercury_agent && nim c --path:src -r tests/tcli.nim
+cd talos_core && nim c --path:src -r tests/tconfig.nim
+cd talos_agent && nim c --path:src -r tests/tcli.nim
 ```
 
 ### Run Discord-specific tests
 
 ```bash
-cd mercury_core
+cd talos_core
 nim c -r tests/test_discord_mocks.nim
 nim c -r tests/test_discord_commands.nim
 nim c -r tests/test_discord_bot.nim
@@ -90,7 +90,7 @@ nim c -r tests/test_e2e_discord.nim
 
 ```bash
 make nph
-nimpretty src/mercury_core/src/mercury_core/*.nim
+nimpretty src/talos_core/src/talos_core/*.nim
 ```
 
 ---
@@ -98,16 +98,16 @@ nimpretty src/mercury_core/src/mercury_core/*.nim
 ## Project Structure
 
 ```
-mercury/
-├── mercury_core/              # Shared library (no binary)
-│   ├── src/mercury_core/      # 19 source modules (incl. agent_loop.nim,
+talos/
+├── talos_core/              # Shared library (no binary)
+│   ├── src/talos_core/      # 19 source modules (incl. agent_loop.nim,
 │   │                         # build_llm_client.nim)
 │   └── tests/                 # 20+ test files
-├── mercury_agent/             # CLI + Discord daemon binary
-│   ├── src/                   # mercury_agent.nim, tools/
+├── talos_agent/             # CLI + Discord daemon binary
+│   ├── src/                   # talos_agent.nim, tools/
 │   └── tests/                 # tagent_loop, tcli, tintegration, test_shell_tool
-├── mercury_code/              # Autonomous coding harness binary
-│   ├── src/mercury_code/      # mercury_code.nim, code_runner.nim,
+├── talos_code/              # Autonomous coding harness binary
+│   ├── src/talos_code/      # talos_code.nim, code_runner.nim,
 │   │                         # code_tool.nim, compile.nim, config.nims
 │   └── tests/                 # tcode_runner (23 tests)
 ├── Makefile                   # build/test/lint shortcuts
@@ -117,7 +117,7 @@ mercury/
 ### Module dependency graph (simplified)
 
 ```
-config.nim ──▶ llm_client.nim ──▶ agent_loop.nim (mercury_core) ──▶ mercury_agent.nim
+config.nim ──▶ llm_client.nim ──▶ agent_loop.nim (talos_core) ──▶ talos_agent.nim
      │                               │
      └──▶ memory.nim ────────────────┘
           tool_registry.nim ─────────┘
@@ -134,7 +134,7 @@ discord.nim ──▶ discord_commands.nim ──▶ agent_dispatcher.nim ──
      ├── message_chunker.nim                     ├── rate_limit.nim
      └── thread_mapping.nim                      └── file_path_validator.nim
 
-mercury_code.nim ──▶ agent_loop ──▶ build_llm_client ──▶ llm_client
+talos_code.nim ──▶ agent_loop ──▶ build_llm_client ──▶ llm_client
      │
      ├── code_runner.nim   (CompileResult, parseNimErrors, CodingHarnessConfig)
      ├── code_tool.nim     (compile, test, read_file, write_file tools)
@@ -185,13 +185,13 @@ mercury_code.nim ──▶ agent_loop ──▶ build_llm_client ──▶ llm_c
 
 ## Adding a New Tool
 
-1. Create the tool module in `mercury_core/src/mercury_core/` (or
-   `mercury_agent/src/tools/` if it depends on agent-layer resources).
+1. Create the tool module in `talos_core/src/talos_core/` (or
+   `talos_agent/src/tools/` if it depends on agent-layer resources).
 2. Define a `proc toolFn(args: JsonNode, ...): string` that matches
    `ToolExecuteProc` signature `{.gcsafe, raises: [].}`.
-3. Register it in `buildRegistry()` in `mercury_agent.nim` (CLI) or
+3. Register it in `buildRegistry()` in `talos_agent.nim` (CLI) or
    in the Discord daemon's `cmdDaemon` (Discord).
-4. Add tests in `mercury_core/tests/` or `mercury_agent/tests/`.
+4. Add tests in `talos_core/tests/` or `talos_agent/tests/`.
 
 ---
 

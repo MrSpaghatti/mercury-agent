@@ -1,8 +1,9 @@
-# Mercury Agent
+
+ # Talos Agent
 
 [![CI](https://github.com/MrSpaghatti/mercury-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/MrSpaghatti/mercury-agent/actions/workflows/ci.yml)
 
-Mercury is a small, self-contained Nim **AI agent** built around the
+Talos is a small, self-contained Nim **AI agent** built around the
 OpenAI Chat Completions protocol. It speaks to any OpenAI-compatible
 endpoint (OpenRouter, vLLM, OpenAI, …), exposes tools to the model via
 function calling, persists every conversation to a local SQLite
@@ -11,7 +12,7 @@ the agent or browsing past sessions.
 
 ```
 +-----------------+     +-------------------+     +----------------+
-|  mercury_agent  | --> | mercury_core/llm  | --> |  LLM endpoint  |
+|  talos_agent    | --> | talos_core/llm    | --> |  LLM endpoint  |
 |     (CLI)       |     |     _client       |     |   (HTTP/JSON)  |
 +--------+--------+     +-------------------+     +----------------+
          |
@@ -40,7 +41,7 @@ the agent or browsing past sessions.
 - **Persistent memory** — every conversation is logged to SQLite with
   a FTS5 full-text index over message content.
 - **CLI** — `chat`, `ask`, `session`, `history`, `search`.
-- **Discord daemon** — run Mercury as a Discord bot with DI-based
+- **Discord daemon** — run Talos as a Discord bot with DI-based
   architecture, permission system, thread management, rate limiting,
   and offline-testable mock API.
 - **Loop & error safety** — agent loop has loop-detection, max-iteration
@@ -51,8 +52,8 @@ the agent or browsing past sessions.
 ## Layout
 
 ```
-mercury/
-├── mercury_core/       # shared library
+talos/
+├── talos_core/       # shared library
 │   ├── src/            # config, llm_client, memory,
 │   │                   # tool_registry, token_counter,
 │   │                   # agent_loop.nim (ReAct loop),
@@ -64,11 +65,11 @@ mercury/
 │   │                   # message_chunker, rate_limit,
 │   │                   # thread_mapping, build_llm_client
 │   └── tests/          # 20+ test files covering all modules
-├── mercury_agent/      # CLI binary (mercury_agent.nim,
+├── talos_agent/      # CLI binary (talos_agent.nim,
 │   ├── src/            # tools/shell.nim)
 │   └── tests/          # tagent_loop, tcli, tintegration, test_shell_tool
-├── mercury_code/       # autonomous coding harness binary
-│   ├── src/            # mercury_code.nim, code_runner.nim,
+├── talos_code/       # autonomous coding harness binary
+│   ├── src/            # talos_code.nim, code_runner.nim,
 │   │                   # code_tool.nim, compile.nim, config.nims
 │   └── tests/          # tcode_runner (23 tests)
 ├── Makefile
@@ -89,19 +90,19 @@ mercury/
 ### Build
 
 ```bash
-make build           # builds both mercury_core and mercury_agent
+make build           # builds both talos_core and talos_agent
 # or, equivalently:
-cd mercury_core   && nimble build
-cd mercury_agent  && nimble build
+cd talos_core   && nimble build
+cd talos_agent  && nimble build
 ```
 
 ## Further Reading
 
-Mercury looks for configuration in three places, **highest priority first**:
+Talos looks for configuration in three places, **highest priority first**:
 
-1. Environment variables (e.g. `MERCURY_PROVIDER=openrouter`).
+1. Environment variables (e.g. `TALOS_PROVIDER=openrouter`).
 2. `.env` in the current directory (typically your API key).
-3. `~/.config/mercury/config.toml` (or the path passed to `--config`).
+3. `~/.config/talos/config.toml` (or the path passed to `--config`).
 
 Minimal `.env`:
 
@@ -109,50 +110,50 @@ Minimal `.env`:
 OPENROUTER_API_KEY=sk-or-...
 ```
 
-Optional `~/.config/mercury/config.toml`:
+Optional `~/.config/talos/config.toml`:
 
 ```toml
-[mercury]
+[talos]
 provider = "openrouter"
 openrouter_model = "anthropic/claude-3.5-sonnet"
 max_tokens = 4096
 temperature = 0.3
 max_loop_iterations = 10
-db_path = "~/.local/share/mercury/mercury.db"
+db_path = "~/.local/share/talos/talos.db"
 ```
 
 ### Run
 
 ```bash
 # One-shot question
-./mercury_agent/mercury_agent ask "what is the capital of France?"
+./talos_agent/talos_agent ask "what is the capital of France?"
 
 # Interactive chat
-./mercury_agent/mercury_agent chat
+./talos_agent/talos_agent chat
 
 # List recent sessions
-./mercury_agent/mercury_agent history
+./talos_agent/talos_agent history
 
 # Full-text search across all stored messages
-./mercury_agent/mercury_agent search "capital of France"
+./talos_agent/talos_agent search "capital of France"
 
 # Resume an existing session (history is shown read-only; new turns
 # go to a fresh session)
-./mercury_agent/mercury_agent session sess_20260101T120000_123456789
+./talos_agent/talos_agent session sess_20260101T120000_123456789
 
 # Per-run overrides (no need to edit the config file)
-./mercury_agent/mercury_agent ask "ping" \
+./talos_agent/talos_agent ask "ping" \
     --provider=vllm --model=qwen2.5-7b-instruct --temperature=0.1
 
 # Run as a Discord bot (set DISCORD_BOT_TOKEN first)
 export DISCORD_BOT_TOKEN="your_token_here"
-./mercury_agent/mercury_agent daemon
+./talos_agent/talos_agent daemon
 ```
 
 ## CLI usage
 
 ```
-mercury_agent <subcommand> [options]
+talos_agent <subcommand> [options]
 
 Subcommands:
   chat                    Interactive REPL.
@@ -178,7 +179,7 @@ Options for history / search:
   --config=<path>         Path to TOML config (overrides default).
   --envFile=<path>        Path to .env (default: .env).
 
-Run `mercury_agent --help` or `mercury_agent <subcommand> --help` for
+Run `talos_agent --help` or `talos_agent <subcommand> --help` for
 the full list.
 ```
 
@@ -186,40 +187,40 @@ the full list.
 
 | Key (TOML)            | Env var                       | Default                                      | Description                                      |
 | --------------------- | ----------------------------- | -------------------------------------------- | ------------------------------------------------ |
-| `provider`            | `MERCURY_PROVIDER`            | `openrouter`                                 | Active provider: `openrouter` or `vllm`.         |
-| `openrouter_endpoint` | `MERCURY_OPENROUTER_ENDPOINT` | `https://openrouter.ai/api/v1`               | OpenRouter base URL.                             |
-| `openrouter_model`    | `MERCURY_OPENROUTER_MODEL`    | `openrouter/auto`                            | Model name used when provider=openrouter.        |
-| `vllm_endpoint`       | `MERCURY_VLLM_ENDPOINT`       | `http://192.168.4.30:8000/v1`                | vLLM base URL.                                   |
-| `vllm_model`          | `MERCURY_VLLM_MODEL`          | `qwen2.5-7b-instruct`                        | Model name used when provider=vllm.              |
-| `max_tokens`          | `MERCURY_MAX_TOKENS`          | `4096`                                       | Per-request `max_tokens`.                        |
-| `temperature`         | `MERCURY_TEMPERATURE`         | `0.3`                                        | Sampling temperature in `[0, 2]`.                |
-| `max_loop_iterations` | `MERCURY_MAX_LOOP_ITERATIONS` | `10`                                         | Hard cap on ReAct iterations per query.          |
-| `db_path`             | `MERCURY_DB_PATH`             | `~/.local/share/mercury/mercury.db`          | SQLite database path. `~` expands to `$HOME`.    |
-| `web_port`            | `MERCURY_WEB_PORT`            | `8080`                                       | Port for the web UI HTTP server.                 |
+| `provider`            | `TALOS_PROVIDER`            | `openrouter`                                 | Active provider: `openrouter` or `vllm`.         |
+| `openrouter_endpoint` | `TALOS_OPENROUTER_ENDPOINT` | `https://openrouter.ai/api/v1`               | OpenRouter base URL.                             |
+| `openrouter_model`    | `TALOS_OPENROUTER_MODEL`    | `openrouter/auto`                            | Model name used when provider=openrouter.        |
+| `vllm_endpoint`       | `TALOS_VLLM_ENDPOINT`       | `http://192.168.4.30:8000/v1`                | vLLM base URL.                                   |
+| `vllm_model`          | `TALOS_VLLM_MODEL`          | `qwen2.5-7b-instruct`                        | Model name used when provider=vllm.              |
+| `max_tokens`          | `TALOS_MAX_TOKENS`          | `4096`                                       | Per-request `max_tokens`.                        |
+| `temperature`         | `TALOS_TEMPERATURE`         | `0.3`                                        | Sampling temperature in `[0, 2]`.                |
+| `max_loop_iterations` | `TALOS_MAX_LOOP_ITERATIONS` | `10`                                         | Hard cap on ReAct iterations per query.          |
+| `db_path`             | `TALOS_DB_PATH`             | `~/.local/share/talos/talos.db`              | SQLite database path. `~` expands to `$HOME`.    |
+| `web_port`            | `TALOS_WEB_PORT`            | `8080`                                       | Port for the web UI HTTP server.                 |
 | `discord.token_env`   | `DISCORD_BOT_TOKEN`           | `DISCORD_BOT_TOKEN`                          | Env var holding the Discord bot token.          |
 | `discord.prefix`      | `DISCORD_PREFIX`              | `!`                                          | Command prefix for bot commands.                |
 | `discord.admins.allow`| (TOML only)                   | `[]`                                         | Discord user IDs with admin privileges.         |
-| `discord.file_rules`  | (TOML only)                   | see `mercury_core/DISCORD.md`                | File access allow/deny patterns.                |
+| `discord.file_rules`  | (TOML only)                   | see `talos_core/DISCORD.md`                  | File access allow/deny patterns.                |
 | (n/a)                 | `OPENROUTER_API_KEY`          | (empty)                                      | API key sent as `Authorization: Bearer ...`.     |
 
 `.env` is also read (in `loadConfig`) for `OPENROUTER_API_KEY`,
-`MERCURY_PROVIDER`, and `MERCURY_VLLM_ENDPOINT` — useful when you don't
+`TALOS_PROVIDER`, and `TALOS_VLLM_ENDPOINT` — useful when you don't
 want to export those variables globally.
 
 ## Architecture overview
 
-### `mercury_core/`
+### `talos_core/`
 
 | Module              | Responsibility                                                                  |
 | ------------------- | ------------------------------------------------------------------------------- |
-| `config.nim`        | Loads `MercuryConfig` from defaults + TOML + `.env` + env vars; validates.      |
+| `config.nim`        | Loads `TalosConfig` from defaults + TOML + `.env` + env vars; validates.       |
 | `llm_client.nim`    | Synchronous OpenAI-compatible Chat Completions client with retry/error types.   |
 | `tool_registry.nim` | Named registry of tools; serializes to OpenAI `tools` array; safe execution.    |
 | `memory.nim`        | SQLite + FTS5: sessions, messages, full-text search, token-usage aggregation.   |
 | `agent_loop.nim`    | ReAct loop: build prompt, call LLM, dispatch tool calls, log to memory.         |
 | `token_counter.nim` | Cheap heuristic token counter used to size requests.                            |
 
-### `mercury_core/` — Discord & Agent Infrastructure
+### `talos_core/` — Discord & Agent Infrastructure
 
 | Module                  | Responsibility                                                              |
 | ----------------------- | --------------------------------------------------------------------------- |
@@ -237,18 +238,18 @@ want to export those variables globally.
 | `rate_limit.nim`        | Per-user token-bucket rate limiter.                                         |
 | `thread_mapping.nim`    | Persistent Discord channel→thread mapping backed by SQLite.                 |
 
-### `mercury_agent/`
+### `talos_agent/`
 
 | Module                  | Responsibility                                                              |
 | ----------------------- | --------------------------------------------------------------------------- |
-| `mercury_agent.nim`     | CLI wiring + subcommand entry points (`chat`, `ask`, `session`, `daemon`).  |
+| `talos_agent.nim`     | CLI wiring + subcommand entry points (`chat`, `ask`, `session`, `daemon`).  |
 | `tools/shell.nim`       | Shell tool with deny-list and per-call timeout.                             |
 
 The agent loop's contract is simple:
 
 ```nim
 proc runAgentLoop*(
-    cfg: MercuryConfig;
+    cfg: TalosConfig;
     llm: LLMClient;
     registry: ToolRegistry;
     memory: var Memory;
@@ -266,7 +267,7 @@ row).
 
 ```bash
 make build           # build both packages
-make test            # run all tests (mercury_core + mercury_agent)
+make test            # run all tests (talos_core + talos_agent)
 ```
 
 > **Note**: The full build (including the Discord daemon) now works on
@@ -276,15 +277,15 @@ make test            # run all tests (mercury_core + mercury_agent)
 Equivalent commands:
 
 ```bash
-cd mercury_core   && nimble test
-cd mercury_agent  && nimble test
+cd talos_core   && nimble test
+cd talos_agent  && nimble test
 ```
 
 ### Test layout
 
 The test suite is split into focused modules:
 
-- `mercury_core/tests/`
+- `talos_core/tests/`
   - `tconfig.nim` — config defaults, TOML parsing, env-var precedence,
     `validate`.
   - `tllm_client.nim` — request building, response parsing, retry logic,
@@ -299,10 +300,10 @@ The test suite is split into focused modules:
     discord_bot, discord_commands, discord_mocks, discord_config,
     e2e_discord, and reconnection).
 
-- `mercury_agent/tests/`
+- `talos_agent/tests/`
   - `tagent_loop.nim` — ReAct loop driven against the mock server: text
     answer, tool-call turn, max iterations, loop detection, tool errors,
-    memory logging, the `MercuryConfig` overload.
+    memory logging, the `TalosConfig` overload.
   - `tcli.nim` — config-override layering, recent-session listing,
     `cmdHistory`/`cmdSearch`/`cmdAsk`/`cmdSession` argument validation,
     binary `--help` smoke test.
@@ -329,7 +330,7 @@ The test suite is split into focused modules:
 ### Running a single test file
 
 ```bash
-cd mercury_agent
+cd talos_agent
 nimble c -r tests/tintegration.nim
 ```
 
@@ -348,16 +349,16 @@ nimble c -r tests/tintegration.nim
 Use `nimpretty` (Nim's official formatter) to format code:
 
 ```bash
-nimpretty src/mercury_core/src/mercury_core/*.nim
-nimpretty src/mercury_agent/src/*.nim
+nimpretty src/talos_core/src/talos_core/*.nim
+nimpretty src/talos_agent/src/*.nim
 ```
 
 The `nph` Make target attempts to run it; `nimpretty` is included with Nim.
 
 ## Development Status
 
-Mercury is currently **Phase 1 (Foundation) + Phase 2 (Discord) +
- Phase 3 P1 (mercury_code) — all complete**. See `STATUS.md` for the
+Talos is currently **Phase 1 (Foundation) + Phase 2 (Discord) +
+ Phase 3 P1 (talos_code) — all complete**. See `STATUS.md` for the
  full status breakdown.
 
 ### Roadmap
@@ -370,7 +371,7 @@ Mercury is currently **Phase 1 (Foundation) + Phase 2 (Discord) +
 | Phase 2 | Discord bot with permissions, threads, file tools | ✅ Complete |
 | P0 | CI pipeline (GitHub Actions on Nim 2.0.8 + 2.2.2) | ✅ Complete |
 | P0 | Deep code audit (40+ source files, 312+ tests) | ✅ Complete |
-| P1 | `mercury_code` — coding harness (compile, test, read_file, write_file) | ✅ Complete |
+| P1 | `talos_code` — coding harness (compile, test, read_file, write_file) | ✅ Complete |
 | P2 | MCP support for external tool discovery | 🔜 Planned |
 | P2 | Sub-agent delegation for parallel work | 🔜 Planned |
 | P3 | Web UI (lightweight HTTP chat frontend) | 🔜 Planned |

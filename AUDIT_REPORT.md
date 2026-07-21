@@ -1,3 +1,5 @@
+# NOTE: This project has been renamed from Mercury Agent to Talos Agent.
+
 > **Status (2026-07-19)**: Most findings below were resolved in the
 > hardening pass — see CHANGELOG `[Unreleased]`. Specifically: no
 > `dummy.nim` files remain; `file_path_validator.nim` uses `std/re`

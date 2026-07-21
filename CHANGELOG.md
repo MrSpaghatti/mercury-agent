@@ -1,3 +1,5 @@
+# NOTE: This project has been renamed from Mercury Agent to Talos Agent.
+
 # Changelog
 
 All notable changes to this project are documented in this file.

@@ -1,3 +1,5 @@
+# NOTE: This project has been renamed from Mercury Agent to Talos Agent.
+
 > **Status (2026-07-19)**: The `sleepAsync(100)` stub is no longer
 > present, but the dispatcher still does not run a real agent loop.
 > Agent loop relocation into `mercury_core` and dispatcher threading

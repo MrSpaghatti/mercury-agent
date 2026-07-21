@@ -25,7 +25,7 @@
 
 - [ ] Code follows the project's style (run `nph fmt` if available)
 - [ ] No `as any`, `@ts-ignore`, or bare `Exception` catches in production code
-- [ ] Tests pass: `nimble test` in `mercury_core/`, `mercury_agent/`, `mercury_code/`
+- [ ] Tests pass: `nimble test` in `talos_core/`, `talos_agent/`, `talos_code/`
 - [ ] `CHANGELOG.md` updated under `[Unreleased]` with the change summary
 - [ ] No sensitive data (tokens, keys, secrets) in the diff
 

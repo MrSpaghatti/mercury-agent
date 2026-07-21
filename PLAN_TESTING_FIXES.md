@@ -1,3 +1,5 @@
+# NOTE: This project has been renamed from Mercury Agent to Talos Agent.
+
 > **Status (2026-07-19)**: Items #1 (`asyncdispatch` imports), #2
 > (channel assertion), #3 (PCRE/nre — now uses `std/re`), #4
 > (`-d:ssl` in nimble + `config.nims`), and #5 (`raiseSSLError`)

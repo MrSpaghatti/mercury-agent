@@ -1,8 +1,8 @@
-# Rename: Mercury → Talos
+# Rename: Mercury → Talos — ✅ COMPLETED 2026-07-20
 
 **Decision**: 2026-07-20. "Mercury Agent" already taken.
 **New name**: **Talos** — bronze automaton from Greek myth. `talos_core`, `talos_agent`, `talos_code`.
-
+**Status**: Done. All source, docs, and config files updated. Backward compat for env vars and TOML section preserved.
 ---
 
 ## Files that need a rename notice (one-line header added at top)

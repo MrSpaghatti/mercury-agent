@@ -1,3 +1,5 @@
+# NOTE: This project has been renamed from Mercury Agent to Talos Agent.
+
 > **Status (2026-07-19)**: `dummy.nim` files (#2) and the `-d:ssl`
 > `config.nims` item (#5) are resolved. Items #1 (discard/unused
 > imports cleanup), #3 (TODOs), and #4 (config edge cases) remain open.
