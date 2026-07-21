@@ -492,4 +492,4 @@ Initial release covering the completed foundation phases.
 - **.github/workflows/ci.yml**: `--threads:on` flag added to test jobs for
   `tllm_client.nim` threadpool requirement
 
-[0.1.0]: https://github.com/MrSpaghatti/mercury-agent/compare/initial...v0.1.0
+[0.1.0]: https://github.com/MrSpaghatti/talos/compare/initial...v0.1.0
